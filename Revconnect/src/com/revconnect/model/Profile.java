@@ -1,35 +1,19 @@
 package com.revconnect.model;
 
 public class Profile {
-    private int profileId;
-    private int userId; // Foreign key to the User table
-    private String fullName;
-    private String bio;
-    private String location;
-    private String interests; // For Personal users
-    private String businessCategory; // For Business users
-    private String creatorNiche; // For Content Creators
+    private int userId;
+    private String username, bio, location, picPath, website;
+    private String businessName, category, address, contactInfo, businessHours;
 
-    // Default Constructor
+    // Standard Constructor
     public Profile() {}
 
-    // Constructor for Profile Creation
-    public Profile(int userId, String fullName, String bio, String location) {
-        this.userId = userId;
-        this.fullName = fullName;
-        this.bio = bio;
-        this.location = location;
-    }
-
-    // Getters and Setters
-    public int getProfileId() { return profileId; }
-    public void setProfileId(int profileId) { this.profileId = profileId; }
-
+    // Getters and Setters (Required for ProfileDAO to work)
     public int getUserId() { return userId; }
     public void setUserId(int userId) { this.userId = userId; }
 
-    public String getFullName() { return fullName; }
-    public void setFullName(String fullName) { this.fullName = fullName; }
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
 
     public String getBio() { return bio; }
     public void setBio(String bio) { this.bio = bio; }
@@ -37,12 +21,24 @@ public class Profile {
     public String getLocation() { return location; }
     public void setLocation(String location) { this.location = location; }
 
-    public String getInterests() { return interests; }
-    public void setInterests(String interests) { this.interests = interests; }
+    public String getPicPath() { return picPath; }
+    public void setPicPath(String picPath) { this.picPath = picPath; }
 
-    public String getBusinessCategory() { return businessCategory; }
-    public void setBusinessCategory(String businessCategory) { this.businessCategory = businessCategory; }
+    public String getWebsite() { return website; }
+    public void setWebsite(String website) { this.website = website; }
 
-    public String getCreatorNiche() { return creatorNiche; }
-    public void setCreatorNiche(String creatorNiche) { this.creatorNiche = creatorNiche; }
+    public String getBusinessName() { return businessName; }
+    public void setBusinessName(String businessName) { this.businessName = businessName; }
+
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
+
+    public String getAddress() { return address; }
+    public void setAddress(String address) { this.address = address; }
+
+    public String getContactInfo() { return contactInfo; }
+    public void setContactInfo(String contactInfo) { this.contactInfo = contactInfo; }
+
+    public String getBusinessHours() { return businessHours; }
+    public void setBusinessHours(String businessHours) { this.businessHours = businessHours; }
 }
