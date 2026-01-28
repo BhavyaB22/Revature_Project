@@ -6,31 +6,24 @@ import com.revconnect.dao.UserDAO;
 public class AuthService {
     private UserDAO userDAO = new UserDAO();
 
-    public String validateAndRegister(User user) {
-        if (userDAO.isEmailExists(user.getEmail())) {
-            return "Error: User already exists with this email!";
-        }
-        String email = user.getEmail();
-        // ^[a-zA-Z0-9]             -> Must start with letter/digit
-        // (?!.*\\.\\.)             -> No consecutive dots
-        // [a-zA-Z0-9._%+-]{0,62}   -> Middle chars (max 64 total before @)
-        // [a-zA-Z0-9]              -> Must not end with special char
-        // @                        -> Separator
-        // [a-zA-Z0-9.-]+           -> Domain name letters/digits
-        // \\.[a-zA-Z]{2,}$         -> Dot and TLD (length >= 2)
-        String emailRegex = "^[a-zA-Z0-9](?!.*\\.\\.)[a-zA-Z0-9._%+-]{0,62}[a-zA-Z0-9]@([a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$";
+    public String validateEmail(String email) {
+        // Corrected Regex:
+    	// Strict Regex for Gmail only:
+    	// ^[a-zA-Z0-9]             -> Starts with letter or digit
+    	// [a-zA-Z0-9._%+-]* -> Middle characters
+    	// @gmail\\.com$            -> Must end exactly with @gmail.com
+    	String emailRegex = "^[a-zA-Z0-9][a-zA-Z0-9._%+-]*@gmail\\.com$";
 
-        if (email == null || !email.matches(emailRegex) || email.contains(" ")) {
-            return "Invalid Email format! Ensure it follows all local and domain rules.";
+        if (email == null || !email.matches(emailRegex)) {
+            return "Invalid Email format! Ensure it starts with a letter/digit and has a valid domain (e.g. .com).";
         }
-
-        // 3. Password Validation
-        return validatePasswordRules(user.getPassword());
+        return "SUCCESS";
     }
 
     public String validatePasswordRules(String p) {
-    	if (p != null && p.startsWith("-")) {
-            return "Invalid input"; 
+    	
+    	if (p.matches(".*-\\d.*")) { 
+            return "Invalid input: Negative values  are not allowed anywhere.";
         }
     	if (p == null || p.length() < 6 ) { // Minimum 6 chars
             return "Invalid! Password must be at least 6 characters.";
@@ -57,5 +50,36 @@ public class AuthService {
         }
 
         return userDAO.updatePassword(userId, newPass) ? "SUCCESS" : "Update failed.";
+    }
+    public String validatePhoneNumber(String phone) {
+        if (phone == null || phone.trim().isEmpty()) {
+            return "Phone number cannot be empty.";
+        }
+
+        // Rule: No leading or trailing spaces
+        if (!phone.equals(phone.trim())) {
+            return "Invalid! Phone number cannot have leading or trailing spaces.";
+        }
+
+        /* Regex Breakdown:
+           ^(\(\+91\))?  -> Optional (+91) at the start
+           [6-9]         -> Must start with 6, 7, 8, or 9
+           \d{9}         -> Followed by exactly 9 more digits (Total 10 digits)
+           $             -> End of string
+        */
+        String regex = "^(\\(\\+91\\))?[6-9]\\d{9}$";
+
+        // Rule: Digits only (after optional country code), Length, and Starting digits
+        if (!phone.matches(regex)) {
+            return "Invalid Format! Use 10 digits starting with 6-9 (e.g., 9876543210) " +
+                   "or include country code like (+91)9876543210. No spaces or hyphens.";
+        }
+
+        // Rule: Cannot be all zeros or a repeated single digit
+        if (phone.matches(".*(\\d)\\1{9}.*")) {
+            return "Invalid! Phone number cannot consist of the same repeated digit.";
+        }
+
+        return "SUCCESS";
     }
 }

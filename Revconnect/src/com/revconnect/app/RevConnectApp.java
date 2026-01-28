@@ -42,25 +42,39 @@ public class RevConnectApp {
     }
 
     private void registerFlow() {
-        User user = new User();
-        System.out.print("Email: ");
-        user.setEmail(sc.next());
-
-        // Check if email exists immediately
-        if(userDAO.isEmailExists(user.getEmail())) {
-            System.out.println("Error: User already exists with this email!");
-            return;
+    	User user = new User();
+    	// 1. Email Validation Loop
+        while (true) {
+            System.out.print("Email: ");
+            String emailInput = sc.next();
+            
+            // Use the strict regex logic from AuthService
+            String result = authService.validateEmail(emailInput);
+            
+            if (result.equals("SUCCESS")) {
+                // Check if email already exists in DB
+                if (userDAO.isEmailExists(emailInput)) {
+                    System.out.println("Error: User already exists with this email!");
+                    continue; // Re-ask for email
+                }
+                user.setEmail(emailInput);
+                break; // Exit loop if valid and unique
+            } else {
+                System.out.println(result); // Show "Invalid Email!" message
+            }
         }
 
+        // 2. Password Validation Loop (Existing)
         while (true) {
             System.out.print("Password (Min 6, 1 Upper, 1 Lower, 1 Num, 1 Special): ");
             String pass = sc.next();
-            user.setPassword(pass);
             String result = authService.validatePasswordRules(pass);
-            if (result.equals("SUCCESS")) break;
+            if (result.equals("SUCCESS")) {
+                user.setPassword(pass);
+                break;
+            }
             System.out.println(result);
         }
-        
         System.out.println("Type: 1.Personal 2.Business 3.Creator");
         int t = sc.nextInt();
         String type = (t==2)?"Business":(t==3?"Creator":"Personal");
@@ -90,11 +104,37 @@ public class RevConnectApp {
         p.setWebsite(websiteInput.isEmpty() ? "N/A" : websiteInput);
 
         if (type.equals("Business")) {
-            sc.nextLine();
             System.out.print("Business Category: ");
             p.setCategory(sc.nextLine());
             System.out.print("Business Address: ");
             p.setAddress(sc.nextLine());
+            System.out.print("Enter Phone Number: "); 
+            String phone;
+         // Ensure sc.nextLine() is called once before this if the previous input was sc.next()
+            sc.nextLine();
+            while (true) {
+                System.out.print("Enter Phone Number: ");
+                phone = sc.nextLine();
+                
+                // Capture the return string from your validation method
+                String status = authService.validatePhoneNumber(phone);
+                
+                if (status.equals("SUCCESS")) {
+                    p.setContactInfo(phone); // Matches column in image_6fe31c.png
+                    break; // VALID: Exit the loop
+                } else {
+                    // INVALID: Print the specific error message and loop again
+                    System.out.println("Invalid" + status); 
+                }
+            }
+            p.setContactInfo(sc.nextLine());
+            System.out.print("Business Hours: ");
+            p.setBusinessHours(sc.nextLine());
+        } else {
+            // For Personal/Creator, set these to null or N/A so the DB doesn't complain
+            p.setCategory("N/A");
+            p.setAddress("N/A");
+            p.setBusinessHours("N/A");
         }
 
         // Save everything to DB
@@ -118,21 +158,39 @@ public class RevConnectApp {
         }
   
     }
-
+    
     private void forgotPasswordFlow() {
         System.out.print("Enter Registered Email: ");
         String email = sc.next();
-        System.out.print("Security Answer: ");
-        sc.nextLine();
-        String answer = sc.nextLine();
+     // 1. Fetch the question from the DAO
+        String question = userDAO.getSecurityQuestion(email);
+        
+        if (question == null) {
+            System.out.println("Error: No account found with that email.");
+            return;
+        }
 
+        // 2. Display the specific question to the user
+        System.out.println("Security Question: " + question);
+        System.out.print("Your Answer: ");
+        sc.nextLine(); // Clear the scanner buffer
+        String answer = sc.nextLine();
+     // 3. Verify the answer
         int uid = userDAO.verifySecurityAnswer(email, answer);
+        
         if (uid != -1) {
-            System.out.print("New Password (Must follow rules): ");
+            System.out.print("Verification Successful! Enter New Password: ");
             String newPass = sc.next();
-            System.out.println(authService.recoverPassword(uid, newPass));
+            
+            // Use your authService to ensure the new pass isn't a negative value
+            String result = authService.validatePasswordRules(newPass);
+            if (result.equals("SUCCESS")) {
+                 System.out.println(authService.recoverPassword(uid, newPass));
+            } else {
+                 System.out.println(result);
+            }
         } else {
-            System.out.println("Incorrect verification details.");
+            System.out.println("Incorrect security answer.");
         }
     }
 

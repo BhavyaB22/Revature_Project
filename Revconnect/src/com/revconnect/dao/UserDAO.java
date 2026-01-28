@@ -146,16 +146,23 @@ public class UserDAO {
      }
  }
 
-    public int getLastInsertedId() {
-        String sql = "SELECT MAX(user_id) FROM Users"; 
-        try {
-            Connection conn = DBConnection.getConnection();
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery(sql);
-            if (rs.next()) return rs.getInt(1);
-        } catch (SQLException e) { e.printStackTrace(); }
-        return 0;
-    }
+ 	public int getLastInsertedId() {
+	    String sql = "SELECT MAX(user_id) FROM Users"; 
+	    Connection conn = null;
+	    Statement stmt = null;
+	    ResultSet rs = null;
+	    try {
+	        conn = DBConnection.getConnection();
+	        stmt = conn.createStatement();
+	        rs = stmt.executeQuery(sql);
+	        if (rs.next()) return rs.getInt(1);
+	    } catch (SQLException e) { 
+	        e.printStackTrace(); 
+	    } finally {
+	        closeResources(conn, null, stmt); // Pass stmt here!
+	    }
+	    return 0;
+	}
 
     public List<Profile> searchUsers(String query) {
         List<Profile> results = new ArrayList<Profile>();
@@ -175,7 +182,30 @@ public class UserDAO {
         } catch (SQLException e) { e.printStackTrace(); }
         return results;
     }
+    public String getSecurityQuestion(String email) {
+        String question = null;
+        String sql = "SELECT s_question FROM USERS WHERE LOWER(email) = LOWER(?)";
+        Connection conn = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
 
+        try {
+            conn = DBConnection.getConnection();
+            pstmt = conn.prepareStatement(sql);
+            pstmt.setString(1, email);
+            rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                question = rs.getString("s_question");
+            }
+        } catch (SQLException e) {
+            System.out.println("Error fetching question: " + e.getMessage());
+        } finally {
+            // Use your existing helper method to clean up
+            closeResources(conn, pstmt, null);
+        }
+        return question;
+    }
     private void closeResources(Connection conn, PreparedStatement pstmt, Statement stmt) {
         try {
             if (pstmt != null) pstmt.close();

@@ -8,9 +8,8 @@ public class ProfileDAO {
 
 	public boolean saveProfile(Profile profile) {
 	    // PROFILE_ID is excluded because your Trigger/Sequence handles it automatically.
-	    // Columns updated to match your Oracle 10g screenshot exactly.
-	    String sql = "INSERT INTO Profiles (user_id, full_name, bio, location, website_link, " +
-	                 "category, business_address, contact_info, business_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+	    String sql = "INSERT INTO Profiles (user_id, username, bio, location, website, " +
+	                 "category, address, contact_info, business_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
 	    
 	    Connection conn = null;
 	    PreparedStatement pstmt = null;
@@ -51,7 +50,7 @@ public class ProfileDAO {
             if (rs.next()) {
                 Profile p = new Profile();
                 p.setUserId(rs.getInt("user_id"));
-                p.setUsername(rs.getString("username"));
+                p.setUsername(rs.getString("FULL_NAME"));
                 p.setBio(rs.getString("bio"));
                 p.setLocation(rs.getString("location"));
                 p.setWebsite(rs.getString("website"));
