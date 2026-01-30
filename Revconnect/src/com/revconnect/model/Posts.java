@@ -7,8 +7,8 @@ public class Posts {
     private String postType; // Maps to POST_TYPE
     private int originalPostId;
     private Timestamp createdTime; // Maps to CREATED_TIME
-    private String postName; // Maps to POST_NAME
-    private String description; // Maps to DESCRIPTION
+    private String title; // Maps to POST_NAME
+    private String content; // Maps to DESCRIPTION
     private int likes; // Maps to LIKES
     private int commentsCount; // Maps to COMMENTS_COUNT
 
@@ -16,10 +16,10 @@ public class Posts {
     public void setPostId(int postId) { this.postId = postId; }
     public int getUserId() { return userId; }
     public void setUserId(int userId) { this.userId = userId; }
-    public String getPostName() { return postName; }
-    public void setPostName(String postName) { this.postName = postName; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
+    public String getContent() { return content; }
+    public void setContent(String content) { this.content = content; }
     public int getLikes() { return likes; }
     public void setLikes(int likes) { this.likes = likes; }
     public int getCommentsCount() { return commentsCount; }

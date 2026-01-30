@@ -11,7 +11,7 @@ public class PostsDAO {
 
     // --- CREATE ---
     public boolean createPost(int userId, String postName, String content) {
-        String sql = "INSERT INTO POSTS (USER_ID, POST_NAME, DESCRIPTION, POST_TYPE) VALUES (?, ?, ?, 'Standard')";
+        String sql = "INSERT INTO POSTS (USER_ID, TITLE, CONTENT, POST_TYPE) VALUES (?, ?, ?, 'Standard')";
         Connection conn = null;
         PreparedStatement pstmt = null;
         try {
@@ -62,8 +62,8 @@ public class PostsDAO {
                 Posts p = new Posts();
                 p.setPostId(rs.getInt("POST_ID"));
                 p.setUserId(rs.getInt("USER_ID"));
-                p.setPostName(rs.getString("POST_NAME"));
-                p.setDescription(rs.getString("DESCRIPTION"));
+                p.setTitle(rs.getString("Title"));
+                p.setContent(rs.getString("Content"));
                 p.setPostType(rs.getString("POST_TYPE"));
                 p.setLikes(rs.getInt("LIKES"));
                 p.setCommentsCount(rs.getInt("COMMENTS_COUNT"));
@@ -119,23 +119,39 @@ public class PostsDAO {
     }
 
     // --- LIKE / UNLIKE LOGIC ---
-    public boolean likePost(int postId, int userId) {
-        String sql = "INSERT INTO LIKES (POST_ID, USER_ID) VALUES (?, ?)";
+    public void likePost(int userId, int postId) {
+        // 1. Check if already liked (to prevent 'Already liked' errors unnecessarily)
+        String insertSql = "INSERT INTO POST_LIKES (POST_ID, USER_ID) VALUES (?, ?)";
+        // 2. THIS IS THE MISSING PART: Increment the LIKES column in your POSTS table
+        String updateSql = "UPDATE POSTS SET LIKES = LIKES + 1 WHERE POST_ID = ?";
+
         Connection conn = null;
-        PreparedStatement pstmt = null;
+        PreparedStatement psInsert = null;
+        PreparedStatement psUpdate = null;
+
         try {
             conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, postId);
-            pstmt.setInt(2, userId);
-            if (pstmt.executeUpdate() > 0) {
-                return updatePostCount(postId, "LIKES", 1);
-            }
-        } catch (SQLException e) { System.out.println("Already liked."); }
-        finally { closeResources(conn, pstmt, null); }
-        return false;
-    }
+            conn.setAutoCommit(false); // Transactions are safer
 
+            psInsert = conn.prepareStatement(insertSql);
+            psInsert.setInt(1, postId);
+            psInsert.setInt(2, userId);
+            psInsert.executeUpdate();
+
+            psUpdate = conn.prepareStatement(updateSql);
+            psUpdate.setInt(1, postId);
+            psUpdate.executeUpdate();
+
+            conn.commit();
+            System.out.println("Post Liked!");
+        } catch (SQLException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
+            System.out.println("Already liked.");
+        } finally {
+            closeResources(conn, psInsert, null);
+            try { if(psUpdate != null) psUpdate.close(); } catch(Exception e) {}
+        }
+    }
     public boolean unlikePost(int postId, int userId) {
         String sql = "DELETE FROM LIKES WHERE POST_ID = ? AND USER_ID = ?";
         Connection conn = null;
@@ -153,38 +169,6 @@ public class PostsDAO {
         return false;
     }
 
-    // --- REPOST LOGIC ---
-    public boolean repost(int originalPostId, int userId, String content) {
-        String sql = "INSERT INTO POSTS (USER_ID, CONTENT, POST_TYPE, ORIGINAL_POST_ID, POST_NAME) VALUES (?, ?, 'Repost', ?, ?)";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            pstmt.setString(2, content);
-            pstmt.setInt(3, originalPostId);
-            pstmt.setString(4, "Shared Post");
-            return pstmt.executeUpdate() > 0;
-        } catch (SQLException e) { e.printStackTrace(); return false; }
-        finally { closeResources(conn, pstmt, null); }
-    }
-
-    public boolean removeRepost(int originalPostId, int userId) {
-        String sql = "DELETE FROM POSTS WHERE ORIGINAL_POST_ID = ? AND USER_ID = ? AND POST_TYPE = 'Repost'";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, originalPostId);
-            pstmt.setInt(2, userId);
-            return pstmt.executeUpdate() > 0;
-        } catch (SQLException e) { e.printStackTrace(); return false; }
-        finally { closeResources(conn, pstmt, null); }
-    }
-
-    // --- HELPER METHODS ---
     public boolean hasUserLiked(int postId, int userId) {
         String sql = "SELECT 1 FROM LIKES WHERE POST_ID = ? AND USER_ID = ?";
         return checkExists(sql, postId, userId);
@@ -220,76 +204,105 @@ public class PostsDAO {
         finally { closeResources(conn, pstmt, null); }
     }
     
-    //increase like count
+    //increase like count + store who liked it 
     
-    public String toggleLike(int postId, int userId) {
+    public String toggleLike(int userId, int postId) {
+        String checkSql = "SELECT COUNT(*) FROM POST_LIKES WHERE POST_ID = ? AND USER_ID = ?";
+        String insertSql = "INSERT INTO POST_LIKES (POST_ID, USER_ID) VALUES (?, ?)";
+        String deleteSql = "DELETE FROM POST_LIKES WHERE POST_ID = ? AND USER_ID = ?";
+        String incrementSql = "UPDATE POSTS SET LIKES = LIKES + 1 WHERE POST_ID = ?";
+        String decrementSql = "UPDATE POSTS SET LIKES = LIKES - 1 WHERE POST_ID = ?";
+
         Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
+        String status = ""; // To store the result message
 
         try {
             conn = DBConnection.getConnection();
+            int count = 0;
             
-            // 1. Check if the user has already liked this specific post
-            // We use 'POST_LIKES' to match your trigger setup
-            String checkSql = "SELECT 1 FROM POST_LIKES WHERE POST_ID = ? AND USER_ID = ?";
-            pstmt = conn.prepareStatement(checkSql);
-            pstmt.setInt(1, postId);
-            pstmt.setInt(2, userId);
-            rs = pstmt.executeQuery();
+            // 1. Check current status
+            PreparedStatement psCheck = conn.prepareStatement(checkSql);
+            psCheck.setInt(1, postId);
+            psCheck.setInt(2, userId);
+            ResultSet rs = psCheck.executeQuery();
+            if (rs.next()) count = rs.getInt(1);
 
-            if (rs.next()) {
-                return "Already liked.";
-            } else {
-                pstmt.close(); // Close the check statement
+            if (count > 0) {
+                // 2. UNLIKE Logic
+                PreparedStatement psDel = conn.prepareStatement(deleteSql);
+                psDel.setInt(1, postId);
+                psDel.setInt(2, userId);
+                psDel.executeUpdate();
 
-                // 2. Simple Insert. 
-                // Trigger POST_LIKES_BIR will automatically:
-                // - Generate the LIKE_ID
-                // - Increment LIKES in the POSTS table
-                String insertSql = "INSERT INTO POST_LIKES (POST_ID, USER_ID) VALUES (?, ?)";
-                pstmt = conn.prepareStatement(insertSql);
-                pstmt.setInt(1, postId);
-                pstmt.setInt(2, userId);
+                PreparedStatement psDec = conn.prepareStatement(decrementSql);
+                psDec.setInt(1, postId);
+                psDec.executeUpdate();
                 
-                pstmt.executeUpdate();
-                return "Post Liked!";
+                status = "Post Unliked.";
+            } else {
+                // 3. LIKE Logic
+                PreparedStatement psIns = conn.prepareStatement(insertSql);
+                psIns.setInt(1, postId);
+                psIns.setInt(2, userId);
+                psIns.executeUpdate();
+
+                PreparedStatement psInc = conn.prepareStatement(incrementSql);
+                psInc.setInt(1, postId);
+                psInc.executeUpdate();
+                
+                status = "Post Liked!";
             }
         } catch (SQLException e) {
-            return "Error: " + e.getMessage();
+            e.printStackTrace();
+            status = "Error processing like.";
         } finally {
-            closeResources(conn, pstmt, rs);
+            closeResources(conn, null, null);
         }
+        return status; // Returns the string to RevConnectApp
     }
     // add a comment 
     
     
 
     public boolean deletePost(int postId, int userId) {
+        // SQL ensures the POST_ID exists AND belongs to the logged-in USER_ID
         String sql = "DELETE FROM POSTS WHERE POST_ID = ? AND USER_ID = ?";
-        Connection conn = null; PreparedStatement pstmt = null;
+        
+        Connection conn = null;
+        PreparedStatement pstmt = null;
+        boolean success = false;
+
         try {
             conn = DBConnection.getConnection();
             pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, postId); pstmt.setInt(2, userId);
-            return pstmt.executeUpdate() > 0;
-        } catch (SQLException e) { return false; }
-        finally { closeResources(conn, pstmt, null); }
+            pstmt.setInt(1, postId);
+            pstmt.setInt(2, userId); 
+            
+            int rowsDeleted = pstmt.executeUpdate();
+            if (rowsDeleted > 0) {
+                success = true;
+            }
+        } catch (SQLException e) {
+            System.out.println("Delete Error: " + e.getMessage());
+        } finally {
+            closeResources(conn, pstmt, null);
+        }
+        return success;
     }
 
     private Posts mapResultSetToPost(ResultSet rs) throws SQLException {
         Posts p = new Posts();
         p.setPostId(rs.getInt("POST_ID"));
         p.setUserId(rs.getInt("USER_ID"));
-        p.setPostName(rs.getString("TITLE"));
-        p.setDescription(rs.getString("CONTENT"));
+        p.setTitle(rs.getString("TITLE"));
+        p.setContent(rs.getString("CONTENT"));
         p.setLikes(rs.getInt("LIKES"));
         p.setCommentsCount(rs.getInt("COMMENTS_COUNT"));
         p.setPostType(rs.getString("POST_TYPE"));
         return p;
     }
     public boolean addComment(int postId, int userId, String text) {
-        // We only insert. The Trigger handles the auto-increment and the counter update!
+        
         String sql = "INSERT INTO POST_COMMENTS (POST_ID, USER_ID, CONTENT) VALUES (?, ?, ?)";
         Connection conn = null;
         PreparedStatement pstmt = null;
@@ -309,7 +322,7 @@ public class PostsDAO {
             closeResources(conn, pstmt, null);
         }
     }
- // Add this inside PostsDAO.java
+ 
     public List<String> getLikesForPost(int postId) {
         List<String> likers = new ArrayList<String>();
         // Joins USERS and LIKES to get the usernames of people who liked the post
@@ -335,7 +348,7 @@ public class PostsDAO {
 
     public List<String> getCommentsForPost(int postId) {
         List<String> comments = new ArrayList<String>();
-        // Added TO_CHAR to format the timestamp for better readability
+       
         String sql = "SELECT c.COMMENT_ID, u.USERNAME, c.CONTENT, " +
                      "TO_CHAR(c.CREATED_TIME, 'DD-Mon HH24:MI') as TIME_STAMP " +
                      "FROM COMMENTS c JOIN USERS u ON c.USER_ID = u.USER_ID " +
@@ -349,7 +362,7 @@ public class PostsDAO {
             pstmt.setInt(1, postId);
             rs = pstmt.executeQuery();
             while (rs.next()) {
-                // New Format: [ID] Username (Time): Content
+              
                 String entry = String.format("[%d] %s (%s): %s", 
                                 rs.getInt("COMMENT_ID"), 
                                 rs.getString("USERNAME"), 
@@ -446,8 +459,8 @@ public class PostsDAO {
                 p.setPostId(rs.getInt("POST_ID"));
                 p.setUserId(rs.getInt("USER_ID"));
                 p.setPostType(rs.getString("POST_TYPE"));
-                p.setPostName(rs.getString("POST_NAME"));
-                p.setDescription(rs.getString("DESCRIPTION"));
+                p.setTitle(rs.getString("POST_NAME"));
+                p.setContent(rs.getString("DESCRIPTION"));
                 p.setLikes(rs.getInt("LIKES"));
                 p.setCommentsCount(rs.getInt("COMMENTS_COUNT"));
                 p.setCreatedTime(rs.getTimestamp("CREATED_TIME"));
@@ -462,9 +475,7 @@ public class PostsDAO {
         return postsList;
     }
 
-    /**
-     * Example of how your Fetch method should look using your Posts.java fields
-     */
+    
    
     private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
         try {

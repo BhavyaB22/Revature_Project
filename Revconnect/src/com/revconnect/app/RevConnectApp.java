@@ -131,7 +131,7 @@ public class RevConnectApp {
                 case 2: postMenu(); break;
                 case 3: showFeedFlow(); break;
                 case 4: showNetworkFlow(); break;
-                case 5: showNotificationFlow(); break;
+                case 5: showNotificationsFlow(); break;
                 case 6: loggedInUser = null; break;
             }
         }
@@ -199,7 +199,7 @@ public class RevConnectApp {
                 } else {
                     System.out.println("\n--- YOUR POST ENTRIES ---");
                     for (Posts p : myPosts) {
-                        System.out.println("[" + p.getPostId() + "] " + p.getPostName());
+                        System.out.println("[" + p.getPostId() + "] " + p.getTitle());
                     }
                 }
 
@@ -232,8 +232,8 @@ public class RevConnectApp {
         if (feedChoice == 1) {
             List<Posts> feed = postsDAO.getFeed();
             for (Posts p : feed) {
-                System.out.println("[" + p.getPostId() + "] " + p.getPostName() + " (Likes: " + p.getLikes() + ")");
-                System.out.println("   > " + p.getDescription());
+                System.out.println("[" + p.getPostId() + "] " + p.getTitle() + " (Likes: " + p.getLikes() + ")");
+                System.out.println("   > " + p.getContent());
             }
             System.out.print("\nEnter Post ID to interact (0 to exit): ");
             int pid = sc.nextInt();
@@ -450,36 +450,41 @@ public class RevConnectApp {
     }
 
     // --- NOTIFICATIONS MODULE ---
-    private void showNotificationFlow() {
-        while (true) {
-            System.out.println("\n--- NOTIFICATIONS ---");
-            List<Notification> notifs = notificationDAO.getNotificationsForUser(loggedInUser.getUserId());
-            
-            if (notifs.isEmpty()) {
-                System.out.println("Inbox empty.");
-                break;
-            }
+    private void showNotificationsFlow() {
+        int myId = loggedInUser.getUserId();
+        // Fetches notifications where USER_ID is your ID
+        List<Notification> list = notificationDAO.getNotificationsForUser(myId);
+        
+        System.out.println("\n--- NOTIFICATIONS ---");
+        if (list.isEmpty()) {
+            System.out.println("No new notifications.");
+            return;
+        }
 
-            for (int i = 0; i < notifs.size(); i++) {
-                Notification n = notifs.get(i);
-                String msg = n.getSenderUsername() + " " + n.getMessage();
-                System.out.println("[" + (i + 1) + "] " + msg);
-            }
-
-            notificationDAO.markAllAsRead(loggedInUser.getUserId());
-            System.out.print("\nSelect number to view details (0 to exit): ");
-            int choice = sc.nextInt();
-            if (choice > 0 && choice <= notifs.size()) {
-                Notification selected = notifs.get(choice - 1);
-                if (selected.getType().contains("LIKE") || selected.getType().contains("COMMENT")) {
-                    viewPostDetails(selected.getPostId(), loggedInUser.getUserId());
-                } else {
-                    viewProfile(selected.getSenderId());
-                }
-            } else break;
+        // 1. Show the list
+        int i = 0;
+        for (i = 0; i < list.size(); i++) {
+            System.out.println("[" + (i + 1) + "] " + list.get(i).getMessage());
+        }
+        int clearAllOption = i + 1;
+        System.out.println("[" + clearAllOption + "] Clear All Notifications");
+        System.out.println("[0] Back");
+        
+        System.out.print("\nAction: ");
+        int choice = sc.nextInt();
+        
+        if (choice == clearAllOption) {
+            // Deletes all rows for this USER_ID in the NOTIFICATIONS table
+            notificationDAO.deleteAllNotifications(myId);
+            System.out.println("All cleared!");
+        } else if (choice > 0 && choice <= list.size()) {
+            Notification selected = list.get(choice - 1);
+            // Deletes the specific NOTIF_ID
+            notificationDAO.deleteNotification(selected.getNotifId());
+            System.out.println("Cleared: " + selected.getMessage());
         }
     }
-
+    
     
     private void displayList(List<String> list, String title) {
         System.out.println("\n--- " + title + " ---");
@@ -495,9 +500,9 @@ public class RevConnectApp {
 
             if (post != null) {
                 
-                System.out.println("   POST: " + post.getPostName());
+                System.out.println("   POST: " + post.getTitle());
                 System.out.println("==============================");
-                System.out.println("Description: " + post.getDescription());
+                System.out.println("Description: " + post.getContent());
                 System.out.println("Type: " + post.getPostType());
                 System.out.println("Likes: " + post.getLikes());
                 System.out.println("Posted on: " + post.getCreatedTime());
@@ -510,6 +515,65 @@ public class RevConnectApp {
             }
         } catch (DatabaseException e) {
             System.out.println("Database Error: " + e.getMessage());
+        }
+    }
+    
+    //delete post flow 
+    private void deletePostFlow() {
+        int myId = loggedInUser.getUserId();
+        // First, fetch only the posts created by this user
+        List<Posts> myPosts = postsDAO.getPostsByUserId(myId);
+
+        if (myPosts.isEmpty()) {
+            System.out.println("You haven't created any posts to delete.");
+            return;
+        }
+
+        // Display only the user's posts
+        for (int i = 0; i < myPosts.size(); i++) {
+            System.out.println("[" + (i + 1) + "] " + myPosts.get(i).getTitle());
+        }
+
+        System.out.print("Select the number of the post to delete: ");
+        int choice = sc.nextInt();
+
+        if (choice > 0 && choice <= myPosts.size()) {
+            int actualPostId = myPosts.get(choice - 1).getPostId();
+            
+            // Call the DAO with both IDs for security
+            if (postsDAO.deletePost(actualPostId, myId)) {
+                System.out.println("Post deleted successfully!");
+            } else {
+                System.out.println("Error: Could not delete the post.");
+            }
+        }
+    }
+    private void removeConnectionFlow() {
+        int myId = loggedInUser.getUserId();
+        // 1. Get the list of people you are actually connected to
+        List<User> connections = networksDAO.getAcceptedConnections(myId);
+
+        if (connections.isEmpty()) {
+            System.out.println("You have no connections to remove.");
+            return;
+        }
+
+        System.out.println("\n--- REMOVE CONNECTION ---");
+        for (int i = 0; i < connections.size(); i++) {
+            System.out.println("[" + (i + 1) + "] " + connections.get(i).getUsername());
+        }
+
+        System.out.print("Select person to remove (0 to cancel): ");
+        int choice = sc.nextInt();
+
+        if (choice > 0 && choice <= connections.size()) {
+            int targetId = connections.get(choice - 1).getUserId();
+            
+            if (networksDAO.removeConnection(myId, targetId)) {
+                System.out.println("Connection removed successfully.");
+            } else {
+                System.out.println("Failed to remove connection.");
+            }
         }
     }
 

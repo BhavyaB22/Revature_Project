@@ -1,6 +1,7 @@
 package com.revconnect.dao;
 
 import com.revconnect.config.DBConnection;
+import com.revconnect.model.User;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,27 +39,27 @@ public class NetworksDAO {
 	}
 
     // 2. Accept or Reject Request
-    public boolean updateRequestStatus(int myId, int senderId, String newStatus) {
-        // We update the record where senderId sent a request to you (myId)
-        String sql = "UPDATE NETWORKS SET STATUS = ? WHERE USER_ID = ? AND TARGET_ID = ?";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
+	public boolean updateRequestStatus(int myId, int senderId, String newStatus) {
+	    // Correct SQL: You are the TARGET_ID, the person who added you is the USER_ID
+	    String sql = "UPDATE NETWORKS SET STATUS = ? WHERE TARGET_ID = ? AND USER_ID = ? AND STATUS = 'PENDING'";
+	    
+	    Connection conn = null;
+	    PreparedStatement pstmt = null;
+	    try {
+	        conn = DBConnection.getConnection();
+	        pstmt = conn.prepareStatement(sql);
+	        pstmt.setString(1, newStatus);
+	        pstmt.setInt(2, myId);
+	        pstmt.setInt(3, senderId);
 
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, newStatus);
-            pstmt.setInt(2, senderId);
-            pstmt.setInt(3, myId);
-
-            return pstmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            System.out.println("Update Status Error: " + e.getMessage());
-            return false;
-        } finally {
-            closeResources(conn, pstmt, null);
-        }
-    }
+	        return pstmt.executeUpdate() > 0;
+	    } catch (SQLException e) {
+	        System.out.println("DB Error: " + e.getMessage());
+	        return false;
+	    } finally {
+	        closeResources(conn, pstmt, null);
+	    }
+	}
 
     // 3. View Connections (Friends)
     public List<String> getConnections(int userId) {
@@ -132,29 +133,35 @@ public class NetworksDAO {
         return list;
     }
  // 4. Remove Connection
-    public boolean removeConnection(int user1, int user2) {
-        // This deletes the relationship regardless of who is USER1 or USER2
-        String sql = "DELETE FROM CONNECTIONS WHERE (USER1_ID = ? AND USER2_ID = ?) OR (USER1_ID = ? AND USER2_ID = ?)";
-        
+    public boolean removeConnection(int myId, int targetUserId) {
+        // This SQL handles both cases: you added them, or they added you
+        String sql = "DELETE FROM NETWORKS WHERE " +
+                     "((SENDER_ID = ? AND RECEIVER_ID = ?) OR " +
+                     "(SENDER_ID = ? AND RECEIVER_ID = ?)) " +
+                     "AND STATUS = 'ACCEPTED'";
+
         Connection conn = null;
         PreparedStatement pstmt = null;
-        
+        boolean success = false;
+
         try {
             conn = DBConnection.getConnection();
             pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, user1);
-            pstmt.setInt(2, user2);
-            pstmt.setInt(3, user2);
-            pstmt.setInt(4, user1);
-            
-            return pstmt.executeUpdate() > 0;
+            pstmt.setInt(1, myId);
+            pstmt.setInt(2, targetUserId);
+            pstmt.setInt(3, targetUserId);
+            pstmt.setInt(4, myId);
+
+            int rows = pstmt.executeUpdate();
+            if (rows > 0) {
+                success = true;
+            }
         } catch (SQLException e) {
             e.printStackTrace();
-            return false;
         } finally {
-            // Using your helper method to close resources safely
             closeResources(conn, pstmt, null);
         }
+        return success;
     }
  // Add these to NetworksDAO.java
     
@@ -312,6 +319,40 @@ public class NetworksDAO {
         } finally {
             closeResources(conn, pstmt, rs);
         }
+    }
+    public List<User> getAcceptedConnections(int myId) {
+        List<User> connections = new ArrayList<User>();
+        // SQL finds the OTHER person in the relationship where status is ACCEPTED
+        String sql = "SELECT U.USER_ID, U.USERNAME FROM USERS U " +
+                     "JOIN NETWORKS N ON (U.USER_ID = N.SENDER_ID OR U.USER_ID = N.RECEIVER_ID) " +
+                     "WHERE (N.SENDER_ID = ? OR N.RECEIVER_ID = ?) " +
+                     "AND U.USER_ID != ? " +
+                     "AND N.STATUS = 'ACCEPTED'";
+
+        Connection conn = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+
+        try {
+            conn = DBConnection.getConnection();
+            pstmt = conn.prepareStatement(sql);
+            pstmt.setInt(1, myId);
+            pstmt.setInt(2, myId);
+            pstmt.setInt(3, myId);
+            rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                User user = new User();
+                user.setUserId(rs.getInt("USER_ID"));
+                user.setUsername(rs.getString("USERNAME"));
+                connections.add(user);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } finally {
+            closeResources(conn, pstmt, rs);
+        }
+        return connections;
     }
 
     // Helper to close resources (Crucial for older Java)
