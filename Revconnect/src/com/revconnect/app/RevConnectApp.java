@@ -1,7 +1,9 @@
 package com.revconnect.app;
 
 import java.util.*;
+import com.revconnect.exception.*;
 import com.revconnect.model.*;
+import com.revconnect.service.*;
 import com.revconnect.dao.*;
 
 public class RevConnectApp {
@@ -9,8 +11,9 @@ public class RevConnectApp {
     private UserDAO userDAO = new UserDAO();
     private ProfileDAO profileDAO = new ProfileDAO();
     private NotificationDAO notificationDAO = new NotificationDAO();
-    private PostsDAO postDAO = new PostsDAO(); 
+    private PostsDAO postsDAO = new PostsDAO(); 
     private NetworksDAO networksDAO = new NetworksDAO();
+    private AuthService authService = new AuthService();
     
     private User loggedInUser = null;
 
@@ -66,17 +69,46 @@ public class RevConnectApp {
         String type = (choice == 2) ? "ContentCreator" : (choice == 3 ? "Business" : "Personal");
         User u = new User();
         u.setUserType(type);
-
-        System.out.print("Email: "); String email = sc.next();
-        if (userDAO.isEmailExists(email)) { System.out.println("Error: Email registered."); return; }
+        
+        String email;
+        while (true) {
+            System.out.print("Email: ");
+            email = sc.next();
+            
+            // Call your AuthService
+            String result = authService.validateEmail(email);
+            
+            if (!result.equals("SUCCESS")) {
+                System.out.println("Error: " + result); // This prints "Invalid email..."
+            } else if (userDAO.isEmailExists(email)) {
+                System.out.println("Error: Email already registered.");
+            } else {
+                break; // Email is valid and unique, exit loop
+            }
+        }
         u.setEmail(email);
 
         System.out.print("Username: "); String uname = sc.next();
         if (userDAO.isUsernameExists(uname)) { System.out.println("Error: Username taken."); return; }
         u.setUsername(uname);
-
-        System.out.print("Password: "); u.setPassword(sc.next());
-        sc.nextLine(); 
+        
+     // --- PASSWORD VALIDATION LOOP ---
+        String password;
+        while (true) {
+            System.out.print("Password: ");
+            password = sc.next();
+            
+            String passResult = authService.validatePassword(password);
+            
+            if (!passResult.equals("SUCCESS")) {
+                System.out.println(" Error: " + passResult);
+            } else {
+                u.setPassword(password); // Save to the user object
+                break; // Valid password, move to security question
+            }
+        }
+        sc.nextLine();
+        
         System.out.print("Security Question: "); u.setsQuestion(sc.nextLine());
         System.out.print("Answer: "); u.setsAnswer(sc.nextLine());
         u.setPrivacy("Public");
@@ -109,16 +141,34 @@ public class RevConnectApp {
     private void profileMenu() {
         while (true) {
             System.out.println("\n--- PROFILE ---");
-            System.out.println("1. View My Profile\n2. Edit Bio/Location\n3. Back");
+            System.out.println("1. View My Profile\n2. Edit my profile \n3. Back");
             int choice = sc.nextInt();
             if (choice == 1) {
                 viewProfile(loggedInUser.getUserId());
+                
             } else if (choice == 2) {
-                sc.nextLine();
-                System.out.print("New Bio: "); String bio = sc.nextLine();
-                profileDAO.updateProfileField(loggedInUser.getUserId(), "bio", bio);
-                System.out.println("Updated!");
-            } else break;
+            	sc.nextLine(); 
+                
+                System.out.println("--- Edit Profile Details ---");
+                System.out.print("username: ");
+                String name = sc.nextLine();
+                
+                System.out.print("Bio: ");
+                String bio = sc.nextLine();
+                
+                System.out.print("Location: ");
+                String loc = sc.nextLine();
+                
+                System.out.print("Website: ");
+                String web = sc.nextLine();
+
+                if (profileDAO.updateProfile(loggedInUser.getUserId(), name, bio, loc, web)) {
+                    System.out.println("Success: Profile updated!");
+                } else {
+                    System.out.println("Error: Update failed.");
+                }
+              break;
+            }
         }
     }
 
@@ -127,52 +177,175 @@ public class RevConnectApp {
         while (true) {
             System.out.println("\n--- MY POSTS ---");
             System.out.println("1. Create Post\n2. View My Posts\n3. Delete Post\n4. Back");
+            System.out.print("Choice: ");
             int choice = sc.nextInt();
+
             if (choice == 1) {
-                sc.nextLine();
-                System.out.print("Title: "); String title = sc.nextLine();
-                System.out.print("Content: "); String content = sc.nextLine();
-                postDAO.createPost(loggedInUser.getUserId(), title, content);
+                sc.nextLine(); // Clear buffer
+                System.out.print("Title: "); 
+                String title = sc.nextLine();
+                System.out.print("Content: "); 
+                String content = sc.nextLine();
+                postsDAO.createPost(loggedInUser.getUserId(), title, content);
+                System.out.println("Post created successfully!");
+
             } else if (choice == 2) {
-                List<Posts> myPosts = postDAO.getPostsByUserId(loggedInUser.getUserId());
-                for (Posts p : myPosts) System.out.println("[" + p.getPostId() + "] " + p.getPostName());
+                // 1. Fetch the list first
+                List<Posts> myPosts = postsDAO.getPostsByUserId(loggedInUser.getUserId());
+
+                // 2. Check if the list is empty
+                if (myPosts == null || myPosts.isEmpty()) {
+                    System.out.println(">> No posts yet! Start by creating one (Option 1).");
+                } else {
+                    System.out.println("\n--- YOUR POST ENTRIES ---");
+                    for (Posts p : myPosts) {
+                        System.out.println("[" + p.getPostId() + "] " + p.getPostName());
+                    }
+                }
+
             } else if (choice == 3) {
                 System.out.print("Enter Post ID to Delete: ");
-                postDAO.deletePost(sc.nextInt(), loggedInUser.getUserId());
-            } else break;
+                int postId = sc.nextInt();
+                boolean deleted = postsDAO.deletePost(postId, loggedInUser.getUserId());
+                
+                if (deleted) {
+                    System.out.println("Post deleted successfully.");
+                } else {
+                    System.out.println("Error: Post ID not found or doesn't belong to you.");
+                }
+
+            } else if (choice == 4) {
+                break;
+            } else {
+                System.out.println("Invalid choice. Try again.");
+            }
         }
     }
 
     // --- FEED & INTERACTION ---
     private void showFeedFlow() {
-        List<Posts> feed = postDAO.getFeed();
-        System.out.println("\n--- GLOBAL FEED ---");
-        for (Posts p : feed) {
-            System.out.println("[" + p.getPostId() + "] " + p.getPostName() + " (Likes: " + p.getLikes() + ")");
-            System.out.println("   > " + p.getDescription());
+        System.out.println("\n--- FEED ---");
+        System.out.println("1. All Posts\n2. Users List\n3. Back");
+        System.out.print("Choice: ");
+        int feedChoice = sc.nextInt();
+
+        if (feedChoice == 1) {
+            List<Posts> feed = postsDAO.getFeed();
+            for (Posts p : feed) {
+                System.out.println("[" + p.getPostId() + "] " + p.getPostName() + " (Likes: " + p.getLikes() + ")");
+                System.out.println("   > " + p.getDescription());
+            }
+            System.out.print("\nEnter Post ID to interact (0 to exit): ");
+            int pid = sc.nextInt();
+            if (pid != 0) interactWithPost(pid);
+
+        } else if (feedChoice == 2) {
+            List<User> users = userDAO.getAllUsers(); 
+            System.out.println("\n--- REGISTERED USERS ---");
+            for (User u : users) {
+                // Self-exclusion check
+                if (u.getUserId() != loggedInUser.getUserId()) {
+                    System.out.println("ID: " + u.getUserId() + " | Username: " + u.getUsername() + " [" + u.getUserType() + "]");
+                }
+            }
+            System.out.print("\nEnter User ID to view profile (0 to back): ");
+            int targetId = sc.nextInt();
+            
+            // Validation: Cannot view/interact with yourself in the list
+            if (targetId == loggedInUser.getUserId()) {
+                System.out.println("You cannot view your own profile through the user list.");
+            } else if (targetId != 0) {
+                viewUserDetailFlow(targetId);
+            }
         }
-        System.out.print("\nEnter ID to interact (0 to exit): ");
-        int pid = sc.nextInt();
-        if (pid != 0) interactWithPost(pid);
+    }
+    
+    //viewuserslist
+    private void viewUserDetailFlow(int targetId) {
+        User targetUser = userDAO.getUserById(targetId);
+        Profile p = profileDAO.getProfileByUserId(targetId);
+        
+        if (targetUser == null) return;
+
+        System.out.println("\n--- " + targetUser.getUsername().toUpperCase() + "'S PROFILE ---");
+        System.out.println("Type:     " + targetUser.getUserType());
+        System.out.println("Bio:      " + (p.getBio() != null ? p.getBio() : "No bio set."));
+        System.out.println("Location: " + (p.getLocation() != null ? p.getLocation() : "Not set."));
+        System.out.println("Website:  " + (p.getWebsite() != null ? p.getWebsite() : "Not set."));
+
+        // Logic for Friend vs Follow
+        boolean isCreator = targetUser.getUserType().equalsIgnoreCase("ContentCreator") || 
+                            targetUser.getUserType().equalsIgnoreCase("Business");
+        
+        // Check current state from NETWORKS table
+        boolean isFollowing = networksDAO.isFollowing(loggedInUser.getUserId(), targetId);
+        boolean isFriend = networksDAO.isFriend(loggedInUser.getUserId(), targetId);
+
+        System.out.println("\n--- OPTIONS ---");
+        if (!isFriend) {
+            System.out.println("1. Add Friend");
+        } else {
+            System.out.println("1. Remove Friend");
+        }
+
+        if (isCreator) {
+            System.out.println(isFollowing ? "2. Unfollow" : "2. Follow");
+        }
+        System.out.println("3. Back");
+        System.out.print("Action: ");
+        
+        int act = sc.nextInt();
+        if (act == 1) {
+            if (!isFriend) {
+                // STATUS will be 'PENDING'
+                if (networksDAO.sendRequest(loggedInUser.getUserId(), targetId, "PENDING")) {
+                    notificationDAO.createNotification(targetId, loggedInUser.getUserId(), "sent you a friend request", "CONNECT");
+                    System.out.println("Friend request sent to " + targetUser.getUsername());
+                }
+            } else {
+                networksDAO.removeConnection(loggedInUser.getUserId(), targetId);
+                System.out.println("Friend removed.");
+            }
+        } else if (act == 2 && isCreator) {
+            if (isFollowing) {
+                networksDAO.removeConnection(loggedInUser.getUserId(), targetId); // Deletes 'FOLLOWING' row
+                System.out.println("Unfollowed " + targetUser.getUsername());
+            } else {
+                // STATUS will be 'FOLLOWING'
+                if (networksDAO.sendRequest(loggedInUser.getUserId(), targetId, "FOLLOWING")) {
+                    notificationDAO.createNotification(targetId, loggedInUser.getUserId(), "started following you", "FOLLOW");
+                    System.out.println("Now following " + targetUser.getUsername());
+                }
+            }
+        }
     }
 
     private void interactWithPost(int pid) {
         System.out.println("1. Like\n2. Comment\n3. Back");
         int action = sc.nextInt();
-        int ownerId = postDAO.getOwnerIdByPostId(pid); // You need this in PostsDAO
+        int ownerId = postsDAO.getOwnerIdByPostId(pid);
 
         if (action == 1) {
-            if (postDAO.likePost(pid, loggedInUser.getUserId())) {
+            // FIX: Use toggleLike instead of likePost
+            String result = postsDAO.toggleLike(pid, loggedInUser.getUserId());
+            System.out.println(result); // This will print "Post Liked!" or "Already liked."
+
+            // Only notify the owner if it's a new like
+            if ("Post Liked!".equals(result)) {
                 notificationDAO.createNotification(ownerId, loggedInUser.getUserId(), "liked your post", "LIKE");
-                System.out.println("Liked!");
             }
         } else if (action == 2) {
-            sc.nextLine();
+        	sc.nextLine(); // Clear buffer
             System.out.print("Comment: ");
             String msg = sc.nextLine();
-            if (postDAO.addComment(pid, loggedInUser.getUserId(), msg)) {
+            
+            // Call the DAO method
+            if (postsDAO.addComment(pid, loggedInUser.getUserId(), msg)) {
+                // Notify the post owner
                 notificationDAO.createNotification(ownerId, loggedInUser.getUserId(), "commented on your post", "COMMENT");
-                System.out.println("Commented!");
+                System.out.println("Commented successfully!");
+            } else {
+                System.out.println("Failed to add comment.");
             }
         }
     }
@@ -181,28 +354,72 @@ public class RevConnectApp {
     private void showNetworkFlow() {
         while (true) {
             System.out.println("\n--- NETWORK ---");
-            System.out.println("1. Connections\n2. Requests\n3. Search Users\n4. Followers\n5. Following\n6. Back");
+            System.out.println("1. View Incoming Requests\n2. View My Connections\n3. Remove Connection\n4. View Followers\n5. View Following\n6. Back");
+            System.out.print("Action: ");
             int choice = sc.nextInt();
             int myId = loggedInUser.getUserId();
 
-            if (choice == 1) displayList(networksDAO.getConnections(myId), "Connections");
-            else if (choice == 2) {
-                displayList(networksDAO.getIncomingRequests(myId), "Incoming Requests");
-                System.out.print("Enter Sender ID to process (0 to skip): ");
-                int sid = sc.nextInt();
-                if (sid != 0) {
-                    System.out.print("1. Accept | 2. Reject: ");
-                    int res = sc.nextInt();
-                    String status = (res == 1) ? "ACCEPTED" : "REJECTED";
-                    if (networksDAO.updateRequestStatus(myId, sid, status)) {
-                        if (res == 1) notificationDAO.createNotification(sid, myId, "accepted your request", "ACCEPT");
-                        System.out.println("Request " + status);
-                    }
+            switch (choice) {
+                case 1:
+                    handleIncomingRequests(myId);
+                    break;
+                case 2:
+                    displayList(networksDAO.getConnections(myId), "My Connections");
+                    break;
+                case 3:
+                    // Logic to remove a connection
+                    break;
+                case 4:
+                    displayList(networksDAO.getFollowers(myId), "Followers");
+                    break;
+                case 5:
+                    displayList(networksDAO.getFollowing(myId), "Following");
+                    break;
+                case 6:
+                    return;
+            }
+        }
+    }
+
+    private void handleIncomingRequests(int myId) {
+        // 1. Fetch and display the list of pending requests
+        List<String> requests = networksDAO.getIncomingRequests(myId);
+        
+        System.out.println("\n--- INCOMING FRIEND REQUESTS ---");
+        if (requests.isEmpty()) {
+            System.out.println("No pending requests.");
+            return; // Exit the method early if nothing to show
+        }
+
+        for (String req : requests) {
+            System.out.println("- " + req);
+        }
+
+        // 2. Ask user which ID they want to interact with
+        System.out.print("\nEnter Sender ID to Accept/Reject (0 to skip): ");
+        int sid = sc.nextInt();
+        
+        if (sid != 0) {
+            System.out.print("1. Accept | 2. Reject: ");
+            int res = sc.nextInt();
+            
+            if (res == 1) { 
+                // Update status in NETWORKS table
+                if (networksDAO.updateRequestStatus(myId, sid, "ACCEPTED")) {
+                    // Notify the sender that you accepted
+                    notificationDAO.createNotification(sid, myId, "accepted your friend request!", "ACCEPT");
+                    System.out.println("Success! You are now connected.");
+                } else {
+                    System.out.println("Error: Could not update request.");
                 }
-            } else if (choice == 3) searchAndConnect();
-            else if (choice == 4) displayList(networksDAO.getFollowers(myId), "Followers");
-            else if (choice == 5) displayList(networksDAO.getFollowing(myId), "Following");
-            else break;
+            } else if (res == 2) {
+                // Remove the pending request from NETWORKS table
+                if (networksDAO.updateRequestStatus(myId, sid, "REJECTED")) {
+                    System.out.println("Request rejected.");
+                }
+            } else {
+                System.out.println("Invalid choice.");
+            }
         }
     }
 
@@ -263,24 +480,50 @@ public class RevConnectApp {
         }
     }
 
-    // --- HELPER METHODS ---
+    
     private void displayList(List<String> list, String title) {
         System.out.println("\n--- " + title + " ---");
         if (list.isEmpty()) System.out.println("Nothing to show.");
         else for (String s : list) System.out.println("- " + s);
     }
 
+ // Update the signature to accept TWO parameters: postId and viewerId
     private void viewPostDetails(int postId, int viewerId) {
-        // Logic to fetch post from DAO and print it
-        System.out.println("Displaying Post ID: " + postId);
+        try {
+            // 1. Fetch the post from the DAO
+            Posts post = postsDAO.getPostById(postId);
+
+            if (post != null) {
+                
+                System.out.println("   POST: " + post.getPostName());
+                System.out.println("==============================");
+                System.out.println("Description: " + post.getDescription());
+                System.out.println("Type: " + post.getPostType());
+                System.out.println("Likes: " + post.getLikes());
+                System.out.println("Posted on: " + post.getCreatedTime());
+                System.out.println("==============================");
+                
+                
+                System.out.println("Logged in as User ID: " + viewerId);
+            } else {
+                System.out.println("Error: Could not find post details.");
+            }
+        } catch (DatabaseException e) {
+            System.out.println("Database Error: " + e.getMessage());
+        }
     }
 
     private void viewProfile(int userId) {
         Profile p = profileDAO.getProfileByUserId(userId);
-        if (p != null) {
-            System.out.println("\n--- " + p.getUsername().toUpperCase() + " ---");
+        if (p == null || (p.getBio() == null || p.getBio().equals("-"))) {
+            System.out.println("\n--- PROFILE ---");
+            System.out.println("Status: No profile details found. Please edit your profile to add info!");
+        } else {
+            System.out.println("\n--- " + loggedInUser.getUsername().toUpperCase() + " ---");
             System.out.println("Bio: " + p.getBio());
-            System.out.println("Location: " + p.getLocation());
+            System.out.println("Location: " + (p.getLocation() != null ? p.getLocation() : "Not set"));
+            System.out.println("Website: " + (p.getWebsite() != null ? p.getWebsite() : "Not set"));
+        
         }
     }
 }

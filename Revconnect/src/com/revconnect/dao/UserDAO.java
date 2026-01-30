@@ -110,6 +110,7 @@ public class UserDAO {
                 User u = new User();
                 u.setUserId(rs.getInt("user_id"));
                 u.setEmail(rs.getString("email"));
+                u.setUsername(rs.getString("USERNAME"));
                 u.setUserType(rs.getString("user_type"));
                 return u;
             }
@@ -119,6 +120,62 @@ public class UserDAO {
             closeResources(conn, pstmt, rs);
         }
         return null;
+    }
+    
+    public User getUserById(int id) {
+        String sql = "SELECT USER_ID, USERNAME, USER_TYPE FROM USERS WHERE USER_ID = ?";
+        Connection conn = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+        try {
+            conn = DBConnection.getConnection();
+            pstmt = conn.prepareStatement(sql);
+            pstmt.setInt(1, id);
+            rs = pstmt.executeQuery();
+            if (rs.next()) {
+                User u = new User();
+                u.setUserId(rs.getInt("USER_ID"));
+                u.setUsername(rs.getString("USERNAME"));
+                u.setUserType(rs.getString("USER_TYPE"));
+                return u;
+            }
+        } catch (SQLException e) { 
+            e.printStackTrace(); 
+        } finally { 
+            closeResources(conn, pstmt, rs); 
+        }
+        return null;
+    }
+    
+    
+    public List<User> getAllUsers() {
+        List<User> users = new ArrayList<User>();
+        // Select the necessary columns from your USERS table
+        String sql = "SELECT USER_ID, USERNAME, USER_TYPE FROM USERS";
+        
+        Connection conn = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+
+        try {
+            conn = DBConnection.getConnection();
+            pstmt = conn.prepareStatement(sql);
+            rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                User u = new User();
+                u.setUserId(rs.getInt("USER_ID"));
+                u.setUsername(rs.getString("USERNAME"));
+                u.setUserType(rs.getString("USER_TYPE"));
+                users.add(u);
+            }
+        } catch (SQLException e) {
+            System.out.println("Error fetching user list: " + e.getMessage());
+        } finally {
+            // Use your helper method to close resources
+            closeResources(conn, pstmt, rs);
+        }
+        return users;
     }
 
     public String getSecurityQuestion(String email) {

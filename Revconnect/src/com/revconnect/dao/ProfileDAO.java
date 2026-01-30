@@ -43,25 +43,35 @@ public class ProfileDAO {
     /**
      * Updates a specific profile column (Name, Bio, etc.)
      */
-    public boolean updateProfileField(int userId, String column, String value) {
-        // Warning: Direct string concatenation for column names is used here for flexibility.
-        // Ensure 'column' variable comes from a safe internal switch-case.
-        String sql = "UPDATE Profiles SET " + column + " = ? WHERE user_id = ?";
+    public boolean updateProfile(int userId, String name, String bio, String loc, String web) {
+        String sql = "UPDATE PROFILES SET username = ?, BIO = ?, LOCATION = ?, WEBSITE = ? WHERE USER_ID = ?";
         Connection conn = null;
         PreparedStatement pstmt = null;
+        
         try {
             conn = DBConnection.getConnection();
             pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, value);
-            pstmt.setInt(2, userId);
+            
+            pstmt.setString(1, name);
+            pstmt.setString(2, bio);
+            pstmt.setString(3, loc);
+            pstmt.setString(4, (web != null && !web.isEmpty()) ? web : null);
+            pstmt.setInt(5, userId);
+            
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            throw new DatabaseException("Update failed for " + column, e);
+            e.printStackTrace();
+            return false;
         } finally {
-            closeResources(conn, pstmt, null);
+            // Manually closing resources as your Java version requires
+            try {
+                if (pstmt != null) pstmt.close();
+                if (conn != null) conn.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
         }
     }
-
     /**
      * Searches profiles by username by joining with the USERS table.
      */

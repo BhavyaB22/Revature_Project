@@ -50,6 +50,7 @@ public class NotificationDAO {
             while (rs.next()) {
                 Notification n = new Notification();
                 n.setNotifId(rs.getInt("NOTIF_ID"));
+                n.setPostId(rs.getInt("POST_ID"));
                 n.setReceiverId(rs.getInt("USER_ID"));
                 n.setSenderId(rs.getInt("SENDER_ID"));
                 n.setMessage(rs.getString("MESSAGE"));
