@@ -171,70 +171,7 @@ public class RevConnectApp {
     }
 
     // --- PROFILE MODULE (UPDATED WITH ROLE LOGIC) ---
-    private void profileMenu() {
-        String role = loggedInUser.getUserType();
-        while (true) {
-            System.out.println("\n--- PROFILE MENU (" + role + ") ---");
-            System.out.println("1. View My Profile\n2. Edit My Profile\n3. Back");
-            System.out.print("Choice: ");
-            int choice = sc.nextInt();
-            sc.nextLine(); // Clear buffer
-
-            if (choice == 1) {
-                viewProfile(loggedInUser.getUserId());
-            } else if (choice == 2) {
-                System.out.println("--- Edit Profile Details ---");
-                
-                if (role.equalsIgnoreCase("Personal")) {
-                    System.out.print("Name/Username: "); String n = sc.nextLine();
-                    System.out.print("Bio: "); String b = sc.nextLine();
-                    System.out.print("Location: "); String l = sc.nextLine();
-                    System.out.print("Website: "); String w = sc.nextLine();
-                    
-                    Profile temp = new Profile();
-                    temp.setUsername(n); temp.setBio(b); temp.setLocation(l);
-                    
-                    if(profileService.validateBasicProfile(temp)) {
-                        profileDAO.updateProfile(loggedInUser.getUserId(), n, b, l, w);
-                        System.out.println("Success: Personal Profile Updated!");
-                    } else {
-                        System.out.println("Error: Username, Bio, and Location are required.");
-                    }
-                } else {
-                    // Enhanced Profile logic for Business/Creator
-                    System.out.print("Entity Name: "); String name = sc.nextLine();
-                    System.out.print("Category: "); String cat = sc.nextLine();
-                    System.out.print("Description/Bio: "); String bio = sc.nextLine();                  
-                    String contact;
- 
-                    while (true) {
-                        System.out.print("Contact Info (10-digit mobile): ");
-                        contact = sc.nextLine();
-                        if (profileService.isValidIndianMobile(contact)) {
-                            break; // Exit loop if valid
-                        } else {
-                            System.out.println("Invalid number! Must be 10 digits starting with 6, 7, 8, or 9.");
-                        }
-                    }
-                    System.out.print("Website: "); String web = sc.nextLine();
-                    
-                    String addr = "N/A", hours = "N/A";
-                    if (role.equalsIgnoreCase("Business")) {
-                        System.out.print("Business Address: "); addr = sc.nextLine();
-                        System.out.print("Business Hours: "); hours = sc.nextLine();
-                    }
-
-                    // Pack for DB storage via Service
-                    String detailedBio = "Category: " + cat + " | " + bio + " | Contact: " + contact;
-                    String detailedLoc = addr + " (Hours: " + hours + ")";
-                    
-                    if (profileDAO.updateProfile(loggedInUser.getUserId(), name, detailedBio, detailedLoc, web)) {
-                        System.out.println("Success: " + role + " Profile Updated!");
-                    }
-                }
-            } else break;
-        }
-    }
+   
 
     // --- POSTS MODULE ---
     private void postMenu() {
@@ -450,16 +387,136 @@ public class RevConnectApp {
         }
     }
 
+ // --- UPDATED VIEW PROFILE LOGIC ---
     private void viewProfile(int userId) {
         Profile p = profileDAO.getProfileByUserId(userId);
-        System.out.println("\n--- PROFILE ---");
-        if (p == null || p.getBio() == null || p.getBio().equals("-")) {
+        User u = userDAO.getUserById(userId); // Needed to check user type
+
+        if (u == null || p == null) {
+            System.out.println("Profile record missing.");
+            return;
+        }
+
+        System.out.println("\n--- PROFILE DETAILS ---");
+        System.out.println("User ID  : " + userId);
+        System.out.println("Username : " + p.getUsername());
+        System.out.println("Type     : " + u.getUserType());
+
+        // Relaxed check: Only show "No details" if both bio and location are empty or default
+        boolean hasNoData = (p.getBio() == null || p.getBio().equals("-") || p.getBio().trim().isEmpty()) && 
+                            (p.getLocation() == null || p.getLocation().equals("-") || p.getLocation().trim().isEmpty());
+
+        if (hasNoData) {
             System.out.println("No details found. Please edit profile.");
         } else {
-            System.out.println("User ID: " + userId);
-            System.out.println("Bio: " + p.getBio());
-            System.out.println("Location: " + p.getLocation());
-            System.out.println("Website: " + p.getWebsite());
+            // Check if user is Business/Creator to display "Packed" details
+            if (!u.getUserType().equalsIgnoreCase("Personal")) {
+                System.out.println("Details  : " + p.getBio()); // Shows Category | Bio | Contact
+                System.out.println("Address  : " + p.getLocation()); // Shows Address (Hours)
+            } else {
+                // Standard display for Personal accounts
+                System.out.println("Bio      : " + p.getBio());
+                System.out.println("Location : " + p.getLocation());
+            }
+            System.out.println("Website  : " + (p.getWebsite() != null ? p.getWebsite() : "N/A"));
+        }
+    }
+
+    // --- UPDATED PROFILE MENU ---
+    private void profileMenu() {
+        // 1. Ensure the row exists so UPDATE won't fail
+        profileDAO.ensureProfileExists(loggedInUser.getUserId(), loggedInUser.getUsername());
+        
+        String role = loggedInUser.getUserType();
+        while (true) {
+            System.out.println("\n--- PROFILE MENU (" + role + ") ---");
+            System.out.println("1. View My Profile\n2. Edit My Profile\n3. Back");
+            System.out.print("Choice: ");
+            int choice = sc.nextInt();
+            sc.nextLine(); // Clear buffer
+
+            if (choice == 1) {
+                viewProfile(loggedInUser.getUserId());
+            } else if (choice == 2) {
+                // Fetch current data to show as "Existing"
+                Profile current = profileDAO.getProfileByUserId(loggedInUser.getUserId());
+                
+                System.out.println("\n--- EDITING " + role.toUpperCase() + " PROFILE ---");
+                System.out.println("(Leave blank or enter new values)");
+
+                if (role.equalsIgnoreCase("Personal")) {
+                    // Personal Prompts with existing data shown
+                    System.out.print("Name [" + current.getUsername() + "]: "); 
+                    String n = sc.nextLine();
+                    if(n.isEmpty()) n = current.getUsername();
+
+                    System.out.print("Bio [" + current.getBio() + "]: "); 
+                    String b = sc.nextLine();
+                    if(b.isEmpty()) b = current.getBio();
+
+                    System.out.print("Location [" + current.getLocation() + "]: "); 
+                    String l = sc.nextLine();
+                    if(l.isEmpty()) l = current.getLocation();
+
+                    System.out.print("Website [" + current.getWebsite() + "]: "); 
+                    String w = sc.nextLine();
+                    if(w.isEmpty()) w = current.getWebsite();
+
+                    if (profileDAO.updateProfile(loggedInUser.getUserId(), n, b, l, w)) {
+                        System.out.println(">> Personal Profile Updated!");
+                    }
+                } else {
+                    // Business/Creator Prompts with current data shown
+                    System.out.println("Current Details: " + current.getBio());
+                    
+                    System.out.print("Business Name [" + current.getUsername() + "]: "); 
+                    String name = sc.nextLine();
+                    if(name.isEmpty()) name = current.getUsername();
+
+                    System.out.print("Category/Industry: "); String cat = sc.nextLine();
+                    System.out.print("Detailed Bio: "); String bio = sc.nextLine();
+                    
+                    String contact;
+                    while (true) {
+                        System.out.print("Contact Info (10-digits): ");
+                        contact = sc.nextLine();
+                        if (profileService.isValidIndianMobile(contact)) break;
+                        System.out.println("Invalid number!");
+                    }
+
+                    System.out.print("Address: "); String addr = sc.nextLine();
+                    System.out.print("Business Hours: "); String hours = sc.nextLine();
+                    System.out.print("Website/Social Media [" + current.getWebsite() + "]: "); 
+                    String web = sc.nextLine();
+                    if(web.isEmpty()) web = current.getWebsite();
+
+                    // Packing Business Data
+                    String packedBio = "Category: " + cat + " | " + bio + " | Contact: " + contact;
+                    String packedLoc = addr + " (Hours: " + hours + ")";
+
+                    if (profileDAO.updateProfile(loggedInUser.getUserId(), name, packedBio, packedLoc, web)) {
+                        System.out.println(">> Business Profile Updated!");
+                    }
+                }
+            } else break;
+        }
+    }
+
+    // Helper to keep profileMenu clean
+    private void handleEditProfile(String role) {
+        System.out.println("\n--- Edit Profile Details ---");
+        if (role.equalsIgnoreCase("Personal")) {
+            System.out.print("Name/Username: "); String n = sc.nextLine();
+            System.out.print("Bio: "); String b = sc.nextLine();
+            System.out.print("Location: "); String l = sc.nextLine();
+            System.out.print("Website: "); String w = sc.nextLine();
+            
+            if (profileDAO.updateProfile(loggedInUser.getUserId(), n, b, l, w)) {
+                System.out.println("Success: Personal Profile Updated!");
+            }
+        } else {
+            // Reuse the existing enhanced logic for Business/Creator
+            updateBusinessFromSearch(loggedInUser.getUserId()); 
         }
     }
     private void viewSearchedProfile(int targetId) {
