@@ -1,4 +1,4 @@
-package com.revconnect.exception;
+package com.revconnect.exceptions;
 // Custom exception for JDBC/SQL issues
 public class DatabaseException extends RuntimeException {
     public DatabaseException(String message, Throwable cause) {

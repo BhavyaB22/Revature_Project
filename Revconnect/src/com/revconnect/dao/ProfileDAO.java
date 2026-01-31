@@ -2,7 +2,7 @@ package com.revconnect.dao;
 
 import com.revconnect.config.DBConnection;
 import com.revconnect.model.Profile;
-import com.revconnect.exception.DatabaseException;
+import com.revconnect.exceptions.*;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;

@@ -3,7 +3,7 @@ package com.revconnect.dao;
 import com.revconnect.config.DBConnection;
 import com.revconnect.model.User;
 import com.revconnect.model.Profile;
-import com.revconnect.exception.DatabaseException;
+import com.revconnect.exceptions.DatabaseException;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +30,7 @@ public class UserDAO {
             closeResources(conn, pstmt, rs);
         }
     }
-    
+
     /**
      * Checks if a username already exists.
      */
@@ -53,7 +53,7 @@ public class UserDAO {
     }
 
     /**
-     * Registers a new user including the username.
+     * Registers a new user and creates an associated profile.
      */
     public boolean registerUser(User user) {
         String userSql = "INSERT INTO USERS (email, username, password, user_type, privacy, s_question, s_answer) VALUES (?,?,?,?,?,?,?)";
@@ -61,9 +61,13 @@ public class UserDAO {
         
         Connection conn = null;
         PreparedStatement pstmt = null;
+        PreparedStatement profilePstmt = null;
+        ResultSet rs = null;
+        
         try {
             conn = DBConnection.getConnection();
-            // Step 1: Tell JDBC we want the generated ID back
+            conn.setAutoCommit(false); // Transactions ensure data integrity
+
             pstmt = conn.prepareStatement(userSql, new String[]{"USER_ID"}); 
             pstmt.setString(1, user.getEmail());
             pstmt.setString(2, user.getUsername());
@@ -74,27 +78,30 @@ public class UserDAO {
             pstmt.setString(7, user.getsAnswer());
 
             if (pstmt.executeUpdate() > 0) {
-                // Step 2: Get that auto-generated ID (like 13 or 14)
-                ResultSet rs = pstmt.getGeneratedKeys();
+                rs = pstmt.getGeneratedKeys();
                 if (rs.next()) {
                     int newUserId = rs.getInt(1);
-                    
-                    // Step 3: Automatically create the Profile row
-                    PreparedStatement profilePstmt = conn.prepareStatement(profileSql);
+                    profilePstmt = conn.prepareStatement(profileSql);
                     profilePstmt.setInt(1, newUserId);
                     profilePstmt.setString(2, user.getUsername());
                     profilePstmt.executeUpdate();
-                    profilePstmt.close();
                 }
+                conn.commit();
                 return true;
             }
         } catch (SQLException e) {
+            try { if (conn != null) conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
             throw new DatabaseException("Registration failed", e);
         } finally {
-            closeResources(conn, pstmt, null);
+            if (profilePstmt != null) try { profilePstmt.close(); } catch (SQLException e) {}
+            closeResources(conn, pstmt, rs);
         }
         return false;
     }
+
+    /**
+     * Standard Login
+     */
     public User login(String email, String pass) {
         String sql = "SELECT * FROM Users WHERE LOWER(email) = LOWER(?) AND password = ?";
         Connection conn = null;
@@ -121,121 +128,39 @@ public class UserDAO {
         }
         return null;
     }
-    
-    public User getUserById(int id) {
-        String sql = "SELECT USER_ID, USERNAME, USER_TYPE FROM USERS WHERE USER_ID = ?";
+
+    /**
+     * UPDATED: Fetches user by email for Password Recovery
+     */
+    public User getUserByEmail(String email) {
+        String sql = "SELECT user_id, username, s_question, s_answer FROM Users WHERE LOWER(email) = LOWER(?)";
         Connection conn = null;
         PreparedStatement pstmt = null;
         ResultSet rs = null;
         try {
             conn = DBConnection.getConnection();
             pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, id);
+            pstmt.setString(1, email);
             rs = pstmt.executeQuery();
             if (rs.next()) {
                 User u = new User();
-                u.setUserId(rs.getInt("USER_ID"));
-                u.setUsername(rs.getString("USERNAME"));
-                u.setUserType(rs.getString("USER_TYPE"));
+                u.setUserId(rs.getInt("user_id"));
+                u.setUsername(rs.getString("username"));
+                u.setsQuestion(rs.getString("s_question"));
+                u.setsAnswer(rs.getString("s_answer"));
                 return u;
             }
-        } catch (SQLException e) { 
-            e.printStackTrace(); 
-        } finally { 
-            closeResources(conn, pstmt, rs); 
-        }
-        return null;
-    }
-    
-    
-    public List<User> getAllUsers() {
-        List<User> users = new ArrayList<User>();
-        // Select the necessary columns from your USERS table
-        String sql = "SELECT USER_ID, USERNAME, USER_TYPE FROM USERS";
-        
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            rs = pstmt.executeQuery();
-
-            while (rs.next()) {
-                User u = new User();
-                u.setUserId(rs.getInt("USER_ID"));
-                u.setUsername(rs.getString("USERNAME"));
-                u.setUserType(rs.getString("USER_TYPE"));
-                users.add(u);
-            }
         } catch (SQLException e) {
-            System.out.println("Error fetching user list: " + e.getMessage());
-        } finally {
-            // Use your helper method to close resources
-            closeResources(conn, pstmt, rs);
-        }
-        return users;
-    }
-
-    public String getSecurityQuestion(String email) {
-        String sql = "SELECT s_question FROM USERS WHERE LOWER(email) = LOWER(?)";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, email);
-            rs = pstmt.executeQuery();
-            if (rs.next()) return rs.getString("s_question");
-        } catch (SQLException e) {
-            throw new DatabaseException("Error fetching security question", e);
+            throw new DatabaseException("Error retrieving user for recovery", e);
         } finally {
             closeResources(conn, pstmt, rs);
         }
         return null;
     }
 
-    public int verifySecurityAnswer(String email, String answer) {
-        String sql = "SELECT user_id FROM Users WHERE LOWER(email)=LOWER(?) AND s_answer=?";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setString(1, email);
-            pstmt.setString(2, answer);
-            rs = pstmt.executeQuery();
-            if (rs.next()) return rs.getInt("user_id");
-        } catch (SQLException e) {
-            throw new DatabaseException("Verification error", e);
-        } finally {
-            closeResources(conn, pstmt, rs);
-        }
-        return -1;
-    }
-
-    public int getNotificationCount(int userId) {
-    	String sql = "SELECT COUNT(*) FROM Notifications WHERE USER_ID = ? AND READ_STATUS = 0";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            rs = pstmt.executeQuery();
-            if (rs.next()) return rs.getInt(1);
-        } catch (SQLException e) {
-            System.err.println("Error fetching notification count: " + e.getMessage());
-        } finally {
-            closeResources(conn, pstmt, rs);
-        }
-        return 0;
-    }
-
+    /**
+     * UPDATED: Updates password after security verification
+     */
     public boolean updatePassword(int userId, String newPass) {
         String sql = "UPDATE Users SET password = ? WHERE user_id = ?";
         Connection conn = null;
@@ -253,63 +178,9 @@ public class UserDAO {
         }
     }
 
-    public int getLastInsertedId() {
-        String sql = "SELECT MAX(user_id) FROM Users"; 
-        Connection conn = null;
-        Statement stmt = null;
-        ResultSet rs = null;
-        try {
-            conn = DBConnection.getConnection();
-            stmt = conn.createStatement();
-            rs = stmt.executeQuery(sql);
-            if (rs.next()) return rs.getInt(1);
-        } catch (SQLException e) { 
-            throw new DatabaseException("ID retrieval error", e);
-        } finally {
-            closeResources(conn, stmt, rs);
-        }
-        return 0;
-    }
-
-    public String getOldPassword(int userId) {
-        String sql = "SELECT password FROM Users WHERE user_id = ?";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            rs = pstmt.executeQuery();
-            if (rs.next()) return rs.getString("password");
-        } catch (SQLException e) {
-            throw new DatabaseException("Error fetching old password", e);
-        } finally {
-            closeResources(conn, pstmt, rs);
-        }
-        return null;
-    }
-    public String getUserTypeById(int userId) {
-        String type = "Personal"; // Default
-        String sql = "SELECT USER_TYPE FROM USERS WHERE USER_ID = ?";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            rs = pstmt.executeQuery();
-            if (rs.next()) {
-                type = rs.getString("USER_TYPE");
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, rs);
-        }
-        return type;
-    }
+    /**
+     * Existing Search Functionality
+     */
     public List<Profile> searchUsers(String query) {
         List<Profile> results = new ArrayList<Profile>();
         String sql = "SELECT * FROM Profiles WHERE username LIKE ?";
@@ -335,10 +206,65 @@ public class UserDAO {
         }
         return results;
     }
+    
+    public User getUserById(int id) {
+        String sql = "SELECT USER_ID, USERNAME, USER_TYPE, EMAIL FROM USERS WHERE USER_ID = ?";
+        Connection conn = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+        try {
+            conn = DBConnection.getConnection();
+            pstmt = conn.prepareStatement(sql);
+            pstmt.setInt(1, id);
+            rs = pstmt.executeQuery();
+            if (rs.next()) {
+                User u = new User();
+                u.setUserId(rs.getInt("USER_ID"));
+                u.setUsername(rs.getString("USERNAME"));
+                u.setUserType(rs.getString("USER_TYPE"));
+                u.setEmail(rs.getString("EMAIL"));
+                return u;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } finally {
+            closeResources(conn, pstmt, rs);
+        }
+        return null;
+    }
+    
+    public List<User> getAllUsers() {
+        List<User> users = new ArrayList<User>();
+        String sql = "SELECT USER_ID, USERNAME, USER_TYPE, EMAIL FROM USERS";
+        
+        Connection conn = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+
+        try {
+            conn = DBConnection.getConnection();
+            pstmt = conn.prepareStatement(sql);
+            rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                User u = new User();
+                u.setUserId(rs.getInt("USER_ID"));
+                u.setUsername(rs.getString("USERNAME"));
+                u.setUserType(rs.getString("USER_TYPE"));
+                u.setEmail(rs.getString("EMAIL"));
+                users.add(u);
+            }
+        } catch (SQLException e) {
+            System.err.println("Error fetching user list: " + e.getMessage());
+        } finally {
+            // Essential for older Java versions to prevent connection leaks
+            closeResources(conn, pstmt, rs);
+        }
+        return users;
+    }
 
     /**
-     * Fixed helper method using Statement instead of PreparedStatement
-     * to allow both normal and Prepared statements to be closed.
+     * Resource Cleanup Helper (Manual closing for older Java compatibility)
      */
     private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
         try {
@@ -346,7 +272,7 @@ public class UserDAO {
             if (stmt != null) stmt.close();
             if (conn != null) conn.close();
         } catch (SQLException e) {
-            System.err.println("Resource cleanup error: " + e.getMessage());
+            System.err.println("Cleanup Error: " + e.getMessage());
         }
     }
 }

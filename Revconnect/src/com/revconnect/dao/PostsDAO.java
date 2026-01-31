@@ -1,7 +1,7 @@
 package com.revconnect.dao;
 
 import com.revconnect.config.DBConnection;
-import com.revconnect.exception.*;
+import com.revconnect.exceptions.*;
 import com.revconnect.model.Posts; // Ensure this is Post (singular) or matches your model
 import java.sql.*;
 import java.util.ArrayList;

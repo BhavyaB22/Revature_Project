@@ -1,7 +1,7 @@
 package com.revconnect.dao;
 
 import com.revconnect.config.DBConnection;
-import com.revconnect.exception.DatabaseException;
+import com.revconnect.exceptions.*;
 import com.revconnect.model.Notification; // Ensure this is imported
 import java.sql.*;
 import java.util.ArrayList;
