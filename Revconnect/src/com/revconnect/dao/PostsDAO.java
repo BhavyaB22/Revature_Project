@@ -205,61 +205,93 @@ public class PostsDAO {
     }
     
     //increase like count + store who liked it 
-    
     public String toggleLike(int userId, int postId) {
+        // SQL Definitions
         String checkSql = "SELECT COUNT(*) FROM POST_LIKES WHERE POST_ID = ? AND USER_ID = ?";
         String insertSql = "INSERT INTO POST_LIKES (POST_ID, USER_ID) VALUES (?, ?)";
         String deleteSql = "DELETE FROM POST_LIKES WHERE POST_ID = ? AND USER_ID = ?";
         String incrementSql = "UPDATE POSTS SET LIKES = LIKES + 1 WHERE POST_ID = ?";
         String decrementSql = "UPDATE POSTS SET LIKES = LIKES - 1 WHERE POST_ID = ?";
+        String verifyPostSql = "SELECT COUNT(*) FROM POSTS WHERE POST_ID = ?";
 
         Connection conn = null;
-        String status = ""; // To store the result message
+        PreparedStatement psVerify = null;
+        PreparedStatement psCheck = null;
+        PreparedStatement psIns = null;
+        PreparedStatement psDel = null;
+        PreparedStatement psInc = null;
+        PreparedStatement psDec = null;
+        ResultSet rsVerify = null;
+        ResultSet rs = null;
+        String status = ""; 
 
         try {
             conn = DBConnection.getConnection();
+            conn.setAutoCommit(false); // Enable transaction
+
+            // --- STEP 1: Verify the Post exists ---
+            psVerify = conn.prepareStatement(verifyPostSql);
+            psVerify.setInt(1, postId);
+            rsVerify = psVerify.executeQuery();
+            if (rsVerify.next() && rsVerify.getInt(1) == 0) {
+                return "Error: Post ID " + postId + " not found in database.";
+            }
+
+            // --- STEP 2: Check current status ---
             int count = 0;
-            
-            // 1. Check current status
-            PreparedStatement psCheck = conn.prepareStatement(checkSql);
-            psCheck.setInt(1, postId);
-            psCheck.setInt(2, userId);
-            ResultSet rs = psCheck.executeQuery();
+            psCheck = conn.prepareStatement(checkSql);
+            psCheck.setInt(1, postId); 
+            psCheck.setInt(2, userId); 
+            rs = psCheck.executeQuery();
             if (rs.next()) count = rs.getInt(1);
 
             if (count > 0) {
-                // 2. UNLIKE Logic
-                PreparedStatement psDel = conn.prepareStatement(deleteSql);
+                // --- STEP 3: UNLIKE Logic ---
+                psDel = conn.prepareStatement(deleteSql);
                 psDel.setInt(1, postId);
                 psDel.setInt(2, userId);
                 psDel.executeUpdate();
 
-                PreparedStatement psDec = conn.prepareStatement(decrementSql);
+                psDec = conn.prepareStatement(decrementSql);
                 psDec.setInt(1, postId);
                 psDec.executeUpdate();
-                
                 status = "Post Unliked.";
             } else {
-                // 3. LIKE Logic
-                PreparedStatement psIns = conn.prepareStatement(insertSql);
-                psIns.setInt(1, postId);
-                psIns.setInt(2, userId);
+                // --- STEP 4: LIKE Logic ---
+                psIns = conn.prepareStatement(insertSql);
+                psIns.setInt(1, postId); 
+                psIns.setInt(2, userId); 
                 psIns.executeUpdate();
 
-                PreparedStatement psInc = conn.prepareStatement(incrementSql);
+                psInc = conn.prepareStatement(incrementSql);
                 psInc.setInt(1, postId);
                 psInc.executeUpdate();
-                
                 status = "Post Liked!";
             }
+
+            conn.commit(); // Save transaction
+            
         } catch (SQLException e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
             e.printStackTrace();
-            status = "Error processing like.";
+            status = "Error processing like: " + e.getMessage();
         } finally {
-            closeResources(conn, null, null);
+            // Clean up all resources manually to avoid memory leaks
+            try { if (rsVerify != null) rsVerify.close(); } catch (Exception e) {}
+            try { if (rs != null) rs.close(); } catch (Exception e) {}
+            try { if (psVerify != null) psVerify.close(); } catch (Exception e) {}
+            try { if (psCheck != null) psCheck.close(); } catch (Exception e) {}
+            try { if (psIns != null) psIns.close(); } catch (Exception e) {}
+            try { if (psDel != null) psDel.close(); } catch (Exception e) {}
+            try { if (psInc != null) psInc.close(); } catch (Exception e) {}
+            try { if (psDec != null) psDec.close(); } catch (Exception e) {}
+            closeResources(conn, null, null); //
         }
-        return status; // Returns the string to RevConnectApp
+        return status;
     }
+   
     // add a comment 
     
     
@@ -325,8 +357,11 @@ public class PostsDAO {
  
     public List<String> getLikesForPost(int postId) {
         List<String> likers = new ArrayList<String>();
-        // Joins USERS and LIKES to get the usernames of people who liked the post
-        String sql = "SELECT u.USERNAME FROM LIKES l JOIN USERS u ON l.USER_ID = u.USER_ID WHERE l.POST_ID = ?";
+        // FIX: Changed table name from LIKES to POST_LIKES
+        String sql = "SELECT u.USERNAME FROM POST_LIKES l " +
+                     "JOIN USERS u ON l.USER_ID = u.USER_ID " +
+                     "WHERE l.POST_ID = ?";
+                     
         Connection conn = null;
         PreparedStatement pstmt = null;
         ResultSet rs = null;
@@ -339,7 +374,8 @@ public class PostsDAO {
                 likers.add(rs.getString("USERNAME"));
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            // This will now catch if the table name is still wrong
+            System.err.println("Error fetching likers: " + e.getMessage());
         } finally {
             closeResources(conn, pstmt, rs);
         }
@@ -476,7 +512,6 @@ public class PostsDAO {
     }
 
     
-   
     private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
         try {
             if (rs != null) rs.close();

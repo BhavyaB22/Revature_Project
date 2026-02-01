@@ -279,7 +279,8 @@ public class RevConnectApp {
         int ownerId = postsDAO.getOwnerIdByPostId(pid);
 
         if (action == 1) {
-            String result = postsDAO.toggleLike(pid, loggedInUser.getUserId());
+        	
+        	String result = postsDAO.toggleLike(loggedInUser.getUserId(), pid);
             System.out.println(result);
             if ("Post Liked!".equals(result)) {
                 notificationDAO.createNotification(ownerId, loggedInUser.getUserId(), "liked your post", "LIKE");
@@ -299,7 +300,7 @@ public class RevConnectApp {
     private void showNetworkFlow() {
         while (true) {
             System.out.println("\n--- NETWORK ---");
-            System.out.println("1. Incoming Requests\n2. Connections\n3. Remove Connection\n4. Followers\n5. Following\n6. Back");
+            System.out.println("1. Incoming Requests\n2. Connections\n3. Remove Connection\n4. Back");
             int choice = sc.nextInt();
             int myId = loggedInUser.getUserId();
 
@@ -307,9 +308,7 @@ public class RevConnectApp {
                 case 1: handleIncomingRequests(myId); break;
                 case 2: displayList(networksDAO.getConnections(myId), "Connections"); break;
                 case 3: removeConnectionFlow(); break;
-                case 4: displayList(networksDAO.getFollowers(myId), "Followers"); break;
-                case 5: displayList(networksDAO.getFollowing(myId), "Following"); break;
-                case 6: return;
+                case 4: return;
             }
         }
     }

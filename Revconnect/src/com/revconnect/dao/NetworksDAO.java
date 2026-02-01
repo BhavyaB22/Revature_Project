@@ -62,39 +62,43 @@ public class NetworksDAO {
 	}
 
     // 3. View Connections (Friends)
-    public List<String> getConnections(int userId) {
-        List<String> connections = new ArrayList<String>();
-        // Using NETWORKS table and specific columns from your schema
-        String sql = "SELECT u.USERNAME FROM USERS u " +
-                     "JOIN NETWORKS n ON (u.USER_ID = n.USER_ID OR u.USER_ID = n.TARGET_ID) " +
-                     "WHERE (n.USER_ID = ? OR n.TARGET_ID = ?) " +
-                     "AND n.STATUS = 'ACCEPTED' " +
-                     "AND u.USER_ID != ?";
+	public List<String> getConnections(int userId) {
+	    List<String> connections = new ArrayList<String>();
+	    // It checks both sides (If you are USER_ID or if you are TARGET_ID).
+	    // It filters by 'ACCEPTED' and ensures your own name isn't in the list.
+	    String sql = "SELECT u.USERNAME FROM USERS u " +
+	                 "JOIN NETWORKS n ON (u.USER_ID = n.USER_ID OR u.USER_ID = n.TARGET_ID) " +
+	                 "WHERE (n.USER_ID = ? OR n.TARGET_ID = ?) " +
+	                 "AND n.STATUS = 'ACCEPTED' " + 
+	                 "AND u.USER_ID != ?"; 
 
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        ResultSet rs = null;
+	    Connection conn = null;
+	    PreparedStatement pstmt = null;
+	    ResultSet rs = null;
 
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            
-            pstmt.setInt(1, userId);
-            pstmt.setInt(2, userId);
-            pstmt.setInt(3, userId);
-            
-            rs = pstmt.executeQuery();
-            while (rs.next()) {
-                connections.add(rs.getString("USERNAME"));
-            }
-        } catch (SQLException e) {
-            System.out.println("SQL Error: " + e.getMessage());
-        } finally {
-            // Use your existing helper method to clean up
-            closeResources(conn, pstmt, rs);
-        }
-        return connections;
-    }
+	    try {
+	        conn = DBConnection.getConnection();
+	        pstmt = conn.prepareStatement(sql);
+	        
+	        // Parameter 1 & 2: Check both possible columns for your ID
+	        pstmt.setInt(1, userId);
+	        pstmt.setInt(2, userId);
+	        
+	        // Parameter 3: Tell the query to ignore your own ID when picking the Username
+	        pstmt.setInt(3, userId);
+	        
+	        rs = pstmt.executeQuery();
+	        while (rs.next()) {
+	            connections.add(rs.getString("USERNAME"));
+	        }
+	    } catch (SQLException e) {
+	        System.out.println("Database Error in getConnections: " + e.getMessage());
+	        e.printStackTrace();
+	    } finally {
+	        closeResources(conn, pstmt, rs);
+	    }
+	    return connections;
+	}
     // 5. View Followers
     public List<String> getFollowing(int userId) {
         List<String> following = new ArrayList<String>();
@@ -135,10 +139,10 @@ public class NetworksDAO {
  // 4. Remove Connection
     public boolean removeConnection(int myId, int targetUserId) {
         // This SQL handles both cases: you added them, or they added you
-        String sql = "DELETE FROM NETWORKS WHERE " +
-                     "((SENDER_ID = ? AND RECEIVER_ID = ?) OR " +
-                     "(SENDER_ID = ? AND RECEIVER_ID = ?)) " +
-                     "AND STATUS = 'ACCEPTED'";
+    	String sql = "DELETE FROM NETWORKS WHERE " +
+                "((USER_ID = ? AND TARGET_ID = ?) OR " +
+                "(USER_ID = ? AND TARGET_ID = ?)) " +
+                "AND STATUS = 'ACCEPTED'";
 
         Connection conn = null;
         PreparedStatement pstmt = null;
@@ -322,12 +326,12 @@ public class NetworksDAO {
     }
     public List<User> getAcceptedConnections(int myId) {
         List<User> connections = new ArrayList<User>();
-        // SQL finds the OTHER person in the relationship where status is ACCEPTED
+        // The JOIN finds the user who is NOT you on either side of an 'ACCEPTED' row
         String sql = "SELECT U.USER_ID, U.USERNAME FROM USERS U " +
-                     "JOIN NETWORKS N ON (U.USER_ID = N.SENDER_ID OR U.USER_ID = N.RECEIVER_ID) " +
-                     "WHERE (N.SENDER_ID = ? OR N.RECEIVER_ID = ?) " +
-                     "AND U.USER_ID != ? " +
-                     "AND N.STATUS = 'ACCEPTED'";
+                "JOIN NETWORKS N ON (U.USER_ID = N.USER_ID OR U.USER_ID = N.TARGET_ID) " +
+                "WHERE (N.USER_ID = ? OR N.TARGET_ID = ?) " +
+                "AND U.USER_ID != ? " +
+                "AND N.STATUS = 'ACCEPTED'";
 
         Connection conn = null;
         PreparedStatement pstmt = null;
@@ -336,9 +340,14 @@ public class NetworksDAO {
         try {
             conn = DBConnection.getConnection();
             pstmt = conn.prepareStatement(sql);
+            
+            // 1. Check if you are the one who sent the request (USER_ID)
             pstmt.setInt(1, myId);
+            // 2. Check if you are the one who received the request (TARGET_ID)
             pstmt.setInt(2, myId);
+            // 3. Exclude yourself from the final list of names
             pstmt.setInt(3, myId);
+            
             rs = pstmt.executeQuery();
 
             while (rs.next()) {
@@ -348,8 +357,10 @@ public class NetworksDAO {
                 connections.add(user);
             }
         } catch (SQLException e) {
+            System.out.println("Error fetching connections: " + e.getMessage());
             e.printStackTrace();
         } finally {
+            // Manually closing resources for compiler compatibility
             closeResources(conn, pstmt, rs);
         }
         return connections;
