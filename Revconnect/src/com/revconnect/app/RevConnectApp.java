@@ -14,7 +14,7 @@ public class RevConnectApp {
     private PostsDAO postsDAO = new PostsDAO(); 
     private NetworksDAO networksDAO = new NetworksDAO();
     private AuthService authService = new AuthService();
-    private ProfileService profileService = new ProfileService(); // Updated service
+    private ProfileService profileService = new ProfileService();
     
     private User loggedInUser = null;
 
@@ -22,7 +22,7 @@ public class RevConnectApp {
         new RevConnectApp().start();
     }
 
-    // --- STARTUP ---
+    // --- STARTUP WITH GLOBAL ERROR HANDLING ---
     public void start() {
         while (true) {
             try {
@@ -39,12 +39,14 @@ public class RevConnectApp {
             } catch (InputMismatchException e) {
                 System.out.println("Error: Please enter a number.");
                 sc.next(); 
+            } catch (DatabaseException e) {
+                System.out.println("\n[SYSTEM ERROR] " + e.getMessage());
             }
         }
     }
 
-    // --- AUTHENTICATION ---
-    private void loginFlow() {
+    // --- AUTHENTICATION MODULE ---
+    private void loginFlow() throws DatabaseException {
         System.out.print("Email: "); String e = sc.next();
         System.out.print("Pass: "); String p = sc.next();
         
@@ -55,51 +57,36 @@ public class RevConnectApp {
             mainMenu();
         } else {
             System.out.println("\n[!] Invalid credentials.");
-            System.out.println("1. Try Again");
-            System.out.println("2. Forgot Password? (Verify via Security Question)");
-            System.out.print("Choice: ");
-            
+            System.out.println("1. Try Again | 2. Forgot Password?");
             int choice = sc.nextInt();
-            if (choice == 2) {
-                forgotPasswordFlow(e); // Passing the email they just typed
-            }
+            if (choice == 2) forgotPasswordFlow(e);
         }
     }
 
-    private void forgotPasswordFlow(String email) {
-        // 1. Fetch user data
+    private void forgotPasswordFlow(String email) throws DatabaseException {
         User user = userDAO.getUserByEmail(email);
-        
         if (user == null) {
-            System.out.println("Error: No account found with that email.");
+            System.out.println("Error: No account found.");
             return;
         }
-
-        // 2. Security Verification
         System.out.println("\n--- SECURITY CHECK ---");
         System.out.println("Question: " + user.getsQuestion());
         System.out.print("Your Answer: ");
-        sc.nextLine(); // Consume leftover newline
+        sc.nextLine(); 
         String inputAnswer = sc.nextLine();
 
         if (inputAnswer.equalsIgnoreCase(user.getsAnswer())) {
-            System.out.println("Identity Verified!");
-            
-            // 3. Update Password
             System.out.print("Enter New Password: ");
             String newPass = sc.next();
-            
             if (userDAO.updatePassword(user.getUserId(), newPass)) {
-                System.out.println("Success! Your password has been updated.");
-            } else {
-                System.out.println("Error: Could not update password in database.");
+                System.out.println("Success! Password updated.");
             }
         } else {
-            System.out.println("Incorrect answer. Recovery aborted.");
+            System.out.println("Incorrect answer.");
         }
     }
 
-    private void registrationMenu() {
+    private void registrationMenu() throws DatabaseException {
         System.out.println("\n--- NEW ACCOUNT ---");
         System.out.println("1. Personal | 2. Creator | 3. Business | 4. Back");
         int choice = sc.nextInt();
@@ -109,39 +96,16 @@ public class RevConnectApp {
         User u = new User();
         u.setUserType(type);
         
-        String email;
-        while (true) {
-            System.out.print("Email: ");
-            email = sc.next();
-            String result = authService.validateEmail(email);
-            if (!result.equals("SUCCESS")) {
-                System.out.println("Error: " + result);
-            } else if (userDAO.isEmailExists(email)) {
-                System.out.println("Error: Email already registered.");
-            } else {
-                break;
-            }
-        }
+        System.out.print("Email: "); String email = sc.next();
+        if (userDAO.isEmailExists(email)) { System.out.println("Error: Email exists."); return; }
         u.setEmail(email);
 
         System.out.print("Username: "); String uname = sc.next();
-        if (userDAO.isUsernameExists(uname)) { System.out.println("Error: Username taken."); return; }
+        if (userDAO.isUsernameExists(uname)) { System.out.println("Error: Taken."); return; }
         u.setUsername(uname);
         
-        String password;
-        while (true) {
-            System.out.print("Password: ");
-            password = sc.next();
-            String passResult = authService.validatePassword(password);
-            if (!passResult.equals("SUCCESS")) {
-                System.out.println(" Error: " + passResult);
-            } else {
-                u.setPassword(password);
-                break;
-            }
-        }
+        System.out.print("Password: "); u.setPassword(sc.next());
         sc.nextLine();
-        
         System.out.print("Security Question: "); u.setsQuestion(sc.nextLine());
         System.out.print("Answer: "); u.setsAnswer(sc.nextLine());
         u.setPrivacy("Public");
@@ -149,8 +113,8 @@ public class RevConnectApp {
         if (userDAO.registerUser(u)) System.out.println("Account Created!");
     }
 
-    // --- MAIN NAVIGATION ---
-    private void mainMenu() {
+    // --- NAVIGATION ---
+    private void mainMenu() throws DatabaseException {
         while (loggedInUser != null) {
             int count = notificationDAO.getUnreadCount(loggedInUser.getUserId());
             String notifLabel = (count > 0) ? "Notifications (" + count + ")" : "Notifications";
@@ -170,431 +134,413 @@ public class RevConnectApp {
         }
     }
 
-    // --- PROFILE MODULE (UPDATED WITH ROLE LOGIC) ---
-   
-
-    // --- POSTS MODULE ---
-    private void postMenu() {
+    // --- PROFILE MODULE ---
+    private void profileMenu() throws DatabaseException {
+        profileDAO.ensureProfileExists(loggedInUser.getUserId(), loggedInUser.getUsername());
+        String role = loggedInUser.getUserType();
         while (true) {
-            System.out.println("\n--- MY POSTS ---");
-            System.out.println("1. Create Post\n2. View My Posts (Likes/Comments)\n3. Delete Post\n4. Back");
-            System.out.print("Choice: ");
+            System.out.println("\n--- PROFILE MENU (" + role + ") ---");
+            System.out.println("1. View Profile\n2. Edit Profile\n3. Back");
             int choice = sc.nextInt();
+            sc.nextLine(); 
 
-            if (choice == 1) {
-                sc.nextLine(); 
-                System.out.print("Title: "); String title = sc.nextLine();
-                System.out.print("Content: "); String content = sc.nextLine();
-                postsDAO.createPost(loggedInUser.getUserId(), title, content);
-                System.out.println("Post created successfully!");
-            } else if (choice == 2) {
-                List<Posts> myPosts = postsDAO.getPostsByUserId(loggedInUser.getUserId());
-                if (myPosts.isEmpty()) {
-                    System.out.println(">> No posts yet!");
-                } else {
-                    for (Posts p : myPosts) {
-                        System.out.println("[" + p.getPostId() + "] " + p.getTitle() + " | Likes: " + p.getLikes());
-                    }
-                    System.out.print("Enter Post ID to view details (0 to back): ");
-                    int pid = sc.nextInt();
-                    if(pid != 0) viewPostDetails(pid, loggedInUser.getUserId());
-                }
-            } else if (choice == 3) {
-                deletePostFlow();
-            } else break;
+            if (choice == 1) viewProfile(loggedInUser.getUserId());
+            else if (choice == 2) handleEditProfile(role);
+            else break;
         }
     }
 
-    // --- FEED & INTERACTION ---
-    private void showFeedFlow() {
-        System.out.println("\n--- FEED ---");
-        System.out.println("1. All Posts\n2. Users List\n3. Back");
-        int feedChoice = sc.nextInt();
+    private void viewProfile(int userId) throws DatabaseException {
+        Profile p = profileDAO.getProfileByUserId(userId);
+        User u = userDAO.getUserById(userId);
+        if (u == null || p == null) return;
 
-        if (feedChoice == 1) {
-            List<Posts> feed = postsDAO.getFeed();
-            for (Posts p : feed) {
-                System.out.println("[" + p.getPostId() + "] " + p.getTitle() + " (Likes: " + p.getLikes() + ")");
-                System.out.println("   > " + p.getContent());
+        System.out.println("\n--- PROFILE DETAILS ---");
+        System.out.println("Username : " + p.getUsername());
+        System.out.println("Type     : " + u.getUserType());
+        System.out.println("Bio      : " + p.getBio());
+        System.out.println("Location : " + p.getLocation());
+        System.out.println("Website  : " + (p.getWebsite() != null ? p.getWebsite() : "N/A"));
+    }
+
+    private void handleEditProfile(String role) throws DatabaseException {
+        if (role.equalsIgnoreCase("Personal")) {
+            System.out.print("Name: "); String n = sc.nextLine();
+            System.out.print("Bio: "); String b = sc.nextLine();
+            System.out.print("Location: "); String l = sc.nextLine();
+            System.out.print("Website: "); String w = sc.nextLine();
+            if (profileDAO.updateProfile(loggedInUser.getUserId(), n, b, l, w)) 
+                System.out.println("Profile Updated!");
+        } else {
+            updateBusinessFromSearch(loggedInUser.getUserId());
+        }
+    }
+
+    private void updateBusinessFromSearch(int bId) throws DatabaseException {
+        System.out.println("\n--- Update Business Details ---");
+        System.out.print("Entity Name: "); String n = sc.nextLine();
+        System.out.print("Category: "); String cat = sc.nextLine();
+        System.out.print("Detailed Bio: "); String bio = sc.nextLine();
+        System.out.print("Address: "); String add = sc.nextLine();
+        System.out.print("Contact: "); String con = sc.nextLine();
+        System.out.print("Website: "); String web = sc.nextLine();
+        System.out.print("Hours: "); String hr = sc.nextLine();
+
+        if (profileService.updateEnhancedProfile(bId, n, cat, bio, add, con, web, hr))
+            System.out.println("[SUCCESS] Details updated!");
+    }
+
+    // --- POSTS MODULE ---
+ // --- POSTS MODULE ---
+    private void postMenu() throws DatabaseException {
+        while (true) {
+            System.out.println("\n--- MY POSTS ---");
+            System.out.println("1. Create\n2. View My Posts\n3. Delete\n4. Back");
+            System.out.print("Choice: ");
+            int choice = sc.nextInt();
+            sc.nextLine(); // Clear buffer after nextInt()
+
+            if (choice == 1) {
+                System.out.print("Title: "); String t = sc.nextLine();
+                System.out.print("Content: "); String c = sc.nextLine();
+                postsDAO.createPost(loggedInUser.getUserId(), t, c);
+                System.out.println("Created!");
+            } else if (choice == 2) {
+                List<Posts> myPosts = postsDAO.getPostsByUserId(loggedInUser.getUserId());
+                
+                // NEW: Check if list is empty before showing the prompt
+                if (myPosts.isEmpty()) {
+                    System.out.println("\n[!] You have no posts yet.");
+                } else {
+                    System.out.println("\n--- YOUR POST ENTRIES ---");
+                    for (Posts p : myPosts) {
+                        System.out.println("[" + p.getPostId() + "] " + p.getTitle());
+                    }
+                    
+                    System.out.print("\nView Post ID (0 to back): ");
+                    int pid = sc.nextInt();
+                    sc.nextLine(); // Clear buffer
+                    
+                    if (pid != 0) {
+                        viewPostDetails(pid, loggedInUser.getUserId());
+                    }
+                }
+            } else if (choice == 3) {
+                deletePostFlow();
+            } else if (choice == 4) {
+                break;
             }
-            System.out.print("\nEnter Post ID to interact (0 to exit): ");
+        }
+    }
+    private void viewPostDetails(int postId, int viewerId) throws DatabaseException {
+        Posts post = postsDAO.getPostById(postId);
+        if (post != null) {
+            System.out.println("\n----------------------------");
+            System.out.println("TITLE   : " + post.getTitle());
+            System.out.println("CONTENT : " + post.getContent());
+            System.out.println("LIKES   : 🧡 " + post.getLikes());
+            System.out.println("COMMENTS: 💬 " + post.getCommentsCount());
+            System.out.println("----------------------------");
+            
+            // Fetch and display the actual comment list
+            List<String> commentList = postsDAO.getCommentsByPostId(postId);
+            if (commentList.isEmpty()) {
+                System.out.println("(No comments yet)");
+            } else {
+                for (String comment : commentList) {
+                    System.out.println("  > " + comment);
+                }
+            }
+            System.out.println("----------------------------");
+        } else {
+            System.out.println("\n[!] Error: Post not found.");
+        }
+    }
+
+    private void deletePostFlow() throws DatabaseException {
+        List<Posts> myPosts = postsDAO.getPostsByUserId(loggedInUser.getUserId());
+        
+        if (myPosts.isEmpty()) {
+            System.out.println("\n[!] You have no posts to delete.");
+            return;
+        }
+        
+        System.out.println("\n--- SELECT POST TO DELETE ---");
+        for (int i = 0; i < myPosts.size(); i++) {
+            // We show 1, 2, 3... for easier user selection
+            System.out.println("[" + (i + 1) + "] " + myPosts.get(i).getTitle());
+        }
+        
+        System.out.print("\nDelete selection (0 to cancel): ");
+        int choice = sc.nextInt();
+        sc.nextLine(); // CRITICAL: Clear the newline buffer
+        
+        if (choice > 0 && choice <= myPosts.size()) {
+            // Map the user's list choice (1, 2, 3) back to the Database Post ID
+            int actualPostId = myPosts.get(choice - 1).getPostId();
+            
+            System.out.print("Are you sure? (Y/N): ");
+            String confirm = sc.nextLine();
+            
+            if (confirm.equalsIgnoreCase("Y")) {
+                if (postsDAO.deletePost(actualPostId, loggedInUser.getUserId())) {
+                    System.out.println("[SUCCESS] Post removed.");
+                } else {
+                    System.out.println("[!] Failed to delete. Database error.");
+                }
+            } else {
+                System.out.println("Deletion cancelled.");
+            }
+        } else if (choice != 0) {
+            System.out.println("[!] Invalid selection.");
+        }
+    }
+  
+   
+ // --- VIEW USER DETAIL FLOW ---
+    private void viewUserDetailFlow(int targetId) {
+        try {
+            User targetUser = userDAO.getUserById(targetId);
+            Profile p = profileDAO.getProfileByUserId(targetId);
+            if (targetUser == null) return;
+
+            System.out.println("\n--- " + targetUser.getUsername().toUpperCase() + " ---");
+            System.out.println("Type: " + targetUser.getUserType());
+            System.out.println("Bio: " + (p.getBio() != null ? p.getBio() : "No bio."));
+            
+            boolean isCreator = !targetUser.getUserType().equalsIgnoreCase("Personal");
+            boolean isFollowing = networksDAO.isFollowing(loggedInUser.getUserId(), targetId);
+            boolean isFriend = networksDAO.isFriend(loggedInUser.getUserId(), targetId);
+
+            System.out.println("\n1. " + (isFriend ? "Remove Friend" : "Add Friend"));
+            if (isCreator) System.out.println("2. " + (isFollowing ? "Unfollow" : "Follow"));
+            System.out.println("3. Back");
+            
+            int act = sc.nextInt();
+            if (act == 1) {
+                if (!isFriend) {
+                    // Logic: Handle the custom NetworkException
+                    if (networksDAO.sendRequest(loggedInUser.getUserId(), targetId, "PENDING")) {
+                        notificationDAO.createNotification(targetId, loggedInUser.getUserId(), "sent a friend request", "CONNECT");
+                        System.out.println("Request sent!");
+                    }
+                } else {
+                    networksDAO.removeConnection(loggedInUser.getUserId(), targetId);
+                    System.out.println("Connection removed.");
+                }
+            } else if (act == 2 && isCreator) {
+                if (isFollowing) {
+                    networksDAO.removeConnection(loggedInUser.getUserId(), targetId);
+                    System.out.println("Unfollowed.");
+                } else {
+                    networksDAO.sendRequest(loggedInUser.getUserId(), targetId, "FOLLOWING");
+                    notificationDAO.createNotification(targetId, loggedInUser.getUserId(), "followed you", "FOLLOW");
+                    System.out.println("Following!");
+                }
+            }
+        } catch (NetworkException e) {
+            // This catches "You cannot connect with yourself" or "Already connected"
+            System.out.println("\n[!] Network Error: " + e.getMessage());
+        } catch (DatabaseException e) {
+            System.out.println("\n[!] Database Error: " + e.getMessage());
+        }
+    }
+
+ // --- FEED & INTERACTION MODULE ---
+    private void showFeedFlow() throws DatabaseException {
+        System.out.println("\n--- FEED ---");
+        System.out.println("1. View Posts");
+        System.out.println("2. Search Users");
+        System.out.println("3. Back");
+        System.out.print("Choice: ");
+        
+        int choice = sc.nextInt();
+        sc.nextLine(); // Clear buffer
+
+        if (choice == 1) {
+            // This now pulls the post with aggregated counts
+            List<Posts> feed = postsDAO.getFeed();
+            
+            if (feed.isEmpty()) {
+                System.out.println("\n[!] The feed is currently empty.");
+                return;
+            }
+
+            System.out.println("\n--- GLOBAL POSTS ---");
+            for (Posts p : feed) {
+                // FORMAT: [ID] Title (By ID: X) | ❤️ Count | 💬 Count
+                System.out.printf("[%d] %s (By ID: %d) | ❤️ %d | 💬 %d\n", 
+                    p.getPostId(), 
+                    p.getTitle(), 
+                    p.getUserId(), 
+                    p.getLikes(), 
+                    p.getCommentsCount());
+            }
+
+            System.out.print("\nEnter Post ID to interact (0 to back): ");
             int pid = sc.nextInt();
-            if (pid != 0) interactWithPost(pid);
-        } else if (feedChoice == 2) {
-            List<User> users = userDAO.getAllUsers(); 
+            sc.nextLine(); // Clear buffer
+            
+            if (pid != 0) {
+                interactWithPost(pid);
+            }
+
+        } else if (choice == 2) {
+            List<User> users = userDAO.getAllUsers();
+            
+            System.out.println("\n--- REGISTERED USERS ---");
             for (User u : users) {
                 if (u.getUserId() != loggedInUser.getUserId()) {
                     System.out.println("ID: " + u.getUserId() + " | Username: " + u.getUsername() + " [" + u.getUserType() + "]");
                 }
             }
+
             System.out.print("\nEnter User ID to view profile (0 to back): ");
-            int targetId = sc.nextInt();
-            if (targetId != 0 && targetId != loggedInUser.getUserId()) viewUserDetailFlow(targetId);
-        }
-    }
-
-    private void viewUserDetailFlow(int targetId) {
-        User targetUser = userDAO.getUserById(targetId);
-        Profile p = profileDAO.getProfileByUserId(targetId);
-        if (targetUser == null) return;
-
-        System.out.println("\n--- " + targetUser.getUsername().toUpperCase() + " ---");
-        System.out.println("Type: " + targetUser.getUserType());
-        System.out.println("Bio: " + (p.getBio() != null ? p.getBio() : "No bio."));
-        
-        boolean isCreator = !targetUser.getUserType().equalsIgnoreCase("Personal");
-        boolean isFollowing = networksDAO.isFollowing(loggedInUser.getUserId(), targetId);
-        boolean isFriend = networksDAO.isFriend(loggedInUser.getUserId(), targetId);
-
-        System.out.println("\n1. " + (isFriend ? "Remove Friend" : "Add Friend"));
-        if (isCreator) System.out.println("2. " + (isFollowing ? "Unfollow" : "Follow"));
-        System.out.println("3. Back");
-        
-        int act = sc.nextInt();
-        if (act == 1) {
-            if (!isFriend) {
-                if (networksDAO.sendRequest(loggedInUser.getUserId(), targetId, "PENDING")) {
-                    notificationDAO.createNotification(targetId, loggedInUser.getUserId(), "sent a friend request", "CONNECT");
-                    System.out.println("Request sent!");
-                }
-            } else {
-                networksDAO.removeConnection(loggedInUser.getUserId(), targetId);
-                System.out.println("Connection removed.");
-            }
-        } else if (act == 2 && isCreator) {
-            if (isFollowing) {
-                networksDAO.removeConnection(loggedInUser.getUserId(), targetId);
-                System.out.println("Unfollowed.");
-            } else {
-                networksDAO.sendRequest(loggedInUser.getUserId(), targetId, "FOLLOWING");
-                notificationDAO.createNotification(targetId, loggedInUser.getUserId(), "followed you", "FOLLOW");
-                System.out.println("Following!");
+            int tid = sc.nextInt();
+            sc.nextLine(); // Clear buffer
+            
+            if (tid != 0) {
+                viewUserDetailFlow(tid);
             }
         }
     }
 
-    private void interactWithPost(int pid) {
-        System.out.println("1. Like\n2. Comment\n3. Back");
-        int action = sc.nextInt();
+    private void interactWithPost(int pid) throws DatabaseException {
+        Posts post = postsDAO.getPostById(pid);
+        if (post == null) {
+            System.out.println("[!] Post not found.");
+            return;
+        }
+
         int ownerId = postsDAO.getOwnerIdByPostId(pid);
 
+        System.out.println("\n--- INTERACTING WITH:"+pid+"---");
+        System.out.println("1. Like/Unlike | 2. Comment | 3. Back");
+        System.out.print("Action: ");
+        int action = sc.nextInt();
+        sc.nextLine(); // Clear buffer
+
         if (action == 1) {
-        	
-        	String result = postsDAO.toggleLike(loggedInUser.getUserId(), pid);
-            System.out.println(result);
-            if ("Post Liked!".equals(result)) {
-                notificationDAO.createNotification(ownerId, loggedInUser.getUserId(), "liked your post", "LIKE");
-            }
-        } else if (action == 2) {
-            sc.nextLine();
-            System.out.print("Comment: ");
-            String msg = sc.nextLine();
-            if (postsDAO.addComment(pid, loggedInUser.getUserId(), msg)) {
-                notificationDAO.createNotification(ownerId, loggedInUser.getUserId(), "commented on your post", "COMMENT");
-                System.out.println("Commented!");
-            }
-        }
-    }
+            // STEP 1: Check if already liked
+            boolean alreadyLiked = postsDAO.hasUserLikedPost(loggedInUser.getUserId(), pid);
 
-    // --- NETWORK MODULE ---
-    private void showNetworkFlow() {
-        while (true) {
-            System.out.println("\n--- NETWORK ---");
-            System.out.println("1. Incoming Requests\n2. Connections\n3. Remove Connection\n4. Back");
-            int choice = sc.nextInt();
-            int myId = loggedInUser.getUserId();
-
-            switch (choice) {
-                case 1: handleIncomingRequests(myId); break;
-                case 2: displayList(networksDAO.getConnections(myId), "Connections"); break;
-                case 3: removeConnectionFlow(); break;
-                case 4: return;
-            }
-        }
-    }
-
-    private void handleIncomingRequests(int myId) {
-        List<String> requests = networksDAO.getIncomingRequests(myId);
-        if (requests.isEmpty()) { System.out.println("No requests."); return; }
-        
-        for (String req : requests) System.out.println("- " + req);
-        System.out.print("Enter Sender ID to Accept (0 to skip): ");
-        int sid = sc.nextInt();
-        if (sid != 0) {
-            System.out.print("1. Accept | 2. Reject: ");
-            int res = sc.nextInt();
-            String status = (res == 1) ? "ACCEPTED" : "REJECTED";
-            if (networksDAO.updateRequestStatus(myId, sid, status)) {
-                if(res == 1) notificationDAO.createNotification(sid, myId, "accepted your request!", "ACCEPT");
-                System.out.println("Done!");
-            }
-        }
-    }
-
-    private void showNotificationsFlow() {
-        int myId = loggedInUser.getUserId();
-        List<Notification> list = notificationDAO.getNotificationsForUser(myId);
-        System.out.println("\n--- NOTIFICATIONS ---");
-        if (list.isEmpty()) { System.out.println("Clear!"); return; }
-
-        for (int i = 0; i < list.size(); i++) System.out.println("[" + (i + 1) + "] " + list.get(i).getMessage());
-        System.out.println("[" + (list.size() + 1) + "] Clear All | [0] Back");
-        
-        int choice = sc.nextInt();
-        if (choice == list.size() + 1) notificationDAO.deleteAllNotifications(myId);
-        else if (choice > 0 && choice <= list.size()) notificationDAO.deleteNotification(list.get(choice-1).getNotifId());
-    }
-
-    private void displayList(List<String> list, String title) {
-        System.out.println("\n--- " + title + " ---");
-        if (list.isEmpty()) System.out.println("Empty.");
-        else for (String s : list) System.out.println("- " + s);
-    }
-
-    private void viewPostDetails(int postId, int viewerId) {
-        Posts post = postsDAO.getPostById(postId);
-        if (post != null) {
-            System.out.println("\n--- POST DETAILS ---");
-            System.out.println("Title: " + post.getTitle());
-            System.out.println("Content: " + post.getContent());
-            System.out.println("Likes: " + post.getLikes());
-            System.out.println("Date: " + post.getCreatedTime());
-        }
-    }
-
-    private void deletePostFlow() {
-        List<Posts> myPosts = postsDAO.getPostsByUserId(loggedInUser.getUserId());
-        if (myPosts.isEmpty()) return;
-        for (int i = 0; i < myPosts.size(); i++) System.out.println("[" + (i + 1) + "] " + myPosts.get(i).getTitle());
-        System.out.print("Select number to delete: ");
-        int choice = sc.nextInt();
-        if (choice > 0 && choice <= myPosts.size()) {
-            postsDAO.deletePost(myPosts.get(choice - 1).getPostId(), loggedInUser.getUserId());
-            System.out.println("Deleted.");
-        }
-    }
-
-    private void removeConnectionFlow() {
-        List<User> connections = networksDAO.getAcceptedConnections(loggedInUser.getUserId());
-        if (connections.isEmpty()) return;
-        for (int i = 0; i < connections.size(); i++) System.out.println("[" + (i + 1) + "] " + connections.get(i).getUsername());
-        System.out.print("Select to remove: ");
-        int choice = sc.nextInt();
-        if (choice > 0 && choice <= connections.size()) {
-            networksDAO.removeConnection(loggedInUser.getUserId(), connections.get(choice - 1).getUserId());
-            System.out.println("Removed.");
-        }
-    }
-
- // --- UPDATED VIEW PROFILE LOGIC ---
-    private void viewProfile(int userId) {
-        Profile p = profileDAO.getProfileByUserId(userId);
-        User u = userDAO.getUserById(userId); // Needed to check user type
-
-        if (u == null || p == null) {
-            System.out.println("Profile record missing.");
-            return;
-        }
-
-        System.out.println("\n--- PROFILE DETAILS ---");
-        System.out.println("User ID  : " + userId);
-        System.out.println("Username : " + p.getUsername());
-        System.out.println("Type     : " + u.getUserType());
-
-        // Relaxed check: Only show "No details" if both bio and location are empty or default
-        boolean hasNoData = (p.getBio() == null || p.getBio().equals("-") || p.getBio().trim().isEmpty()) && 
-                            (p.getLocation() == null || p.getLocation().equals("-") || p.getLocation().trim().isEmpty());
-
-        if (hasNoData) {
-            System.out.println("No details found. Please edit profile.");
-        } else {
-            // Check if user is Business/Creator to display "Packed" details
-            if (!u.getUserType().equalsIgnoreCase("Personal")) {
-                System.out.println("Details  : " + p.getBio()); // Shows Category | Bio | Contact
-                System.out.println("Address  : " + p.getLocation()); // Shows Address (Hours)
-            } else {
-                // Standard display for Personal accounts
-                System.out.println("Bio      : " + p.getBio());
-                System.out.println("Location : " + p.getLocation());
-            }
-            System.out.println("Website  : " + (p.getWebsite() != null ? p.getWebsite() : "N/A"));
-        }
-    }
-
-    // --- UPDATED PROFILE MENU ---
-    private void profileMenu() {
-        // 1. Ensure the row exists so UPDATE won't fail
-        profileDAO.ensureProfileExists(loggedInUser.getUserId(), loggedInUser.getUsername());
-        
-        String role = loggedInUser.getUserType();
-        while (true) {
-            System.out.println("\n--- PROFILE MENU (" + role + ") ---");
-            System.out.println("1. View My Profile\n2. Edit My Profile\n3. Back");
-            System.out.print("Choice: ");
-            int choice = sc.nextInt();
-            sc.nextLine(); // Clear buffer
-
-            if (choice == 1) {
-                viewProfile(loggedInUser.getUserId());
-            } else if (choice == 2) {
-                // Fetch current data to show as "Existing"
-                Profile current = profileDAO.getProfileByUserId(loggedInUser.getUserId());
-                
-                System.out.println("\n--- EDITING " + role.toUpperCase() + " PROFILE ---");
-                System.out.println("(Leave blank or enter new values)");
-
-                if (role.equalsIgnoreCase("Personal")) {
-                    // Personal Prompts with existing data shown
-                    System.out.print("Name [" + current.getUsername() + "]: "); 
-                    String n = sc.nextLine();
-                    if(n.isEmpty()) n = current.getUsername();
-
-                    System.out.print("Bio [" + current.getBio() + "]: "); 
-                    String b = sc.nextLine();
-                    if(b.isEmpty()) b = current.getBio();
-
-                    System.out.print("Location [" + current.getLocation() + "]: "); 
-                    String l = sc.nextLine();
-                    if(l.isEmpty()) l = current.getLocation();
-
-                    System.out.print("Website [" + current.getWebsite() + "]: "); 
-                    String w = sc.nextLine();
-                    if(w.isEmpty()) w = current.getWebsite();
-
-                    if (profileDAO.updateProfile(loggedInUser.getUserId(), n, b, l, w)) {
-                        System.out.println(">> Personal Profile Updated!");
-                    }
-                } else {
-                    // Business/Creator Prompts with current data shown
-                    System.out.println("Current Details: " + current.getBio());
-                    
-                    System.out.print("Business Name [" + current.getUsername() + "]: "); 
-                    String name = sc.nextLine();
-                    if(name.isEmpty()) name = current.getUsername();
-
-                    System.out.print("Category/Industry: "); String cat = sc.nextLine();
-                    System.out.print("Detailed Bio: "); String bio = sc.nextLine();
-                    
-                    String contact;
-                    while (true) {
-                        System.out.print("Contact Info (10-digits): ");
-                        contact = sc.nextLine();
-                        if (profileService.isValidIndianMobile(contact)) break;
-                        System.out.println("Invalid number!");
-                    }
-
-                    System.out.print("Address: "); String addr = sc.nextLine();
-                    System.out.print("Business Hours: "); String hours = sc.nextLine();
-                    System.out.print("Website/Social Media [" + current.getWebsite() + "]: "); 
-                    String web = sc.nextLine();
-                    if(web.isEmpty()) web = current.getWebsite();
-
-                    // Packing Business Data
-                    String packedBio = "Category: " + cat + " | " + bio + " | Contact: " + contact;
-                    String packedLoc = addr + " (Hours: " + hours + ")";
-
-                    if (profileDAO.updateProfile(loggedInUser.getUserId(), name, packedBio, packedLoc, web)) {
-                        System.out.println(">> Business Profile Updated!");
-                    }
+            if (alreadyLiked) {
+                System.out.print("You have already liked this post. Unlike it? (Y/N): ");
+                String confirm = sc.nextLine();
+                if (!confirm.equalsIgnoreCase("Y")) {
+                    System.out.println("Unliked.");
+                    return;
                 }
-            } else break;
-        }
-    }
+            }
 
-    // Helper to keep profileMenu clean
-    private void handleEditProfile(String role) {
-        System.out.println("\n--- Edit Profile Details ---");
-        if (role.equalsIgnoreCase("Personal")) {
-            System.out.print("Name/Username: "); String n = sc.nextLine();
-            System.out.print("Bio: "); String b = sc.nextLine();
-            System.out.print("Location: "); String l = sc.nextLine();
-            System.out.print("Website: "); String w = sc.nextLine();
+            // STEP 2: Perform the toggle
+            String result = postsDAO.toggleLike(loggedInUser.getUserId(), pid);
+            System.out.println(result);
+
+            // STEP 3: Notify owner only if it was a "Like" and not "Unlike"
+            if (result.contains("Liked") && ownerId != loggedInUser.getUserId()) {
+                notificationDAO.createNotification(ownerId, loggedInUser.getUserId(), 
+                    "liked your post: " + post.getTitle(), "LIKE");
+            }
+
+        } else if (action == 2) {
+            // STEP 1: Check if already commented
+            boolean alreadyCommented = postsDAO.hasUserCommented(loggedInUser.getUserId(), pid);
+
+            if (alreadyCommented) {
+                System.out.println("You have already commented on this post.");
+                System.out.print("Do you want to add another or remove existing? (1: Add, 2: Remove, 3: Cancel): ");
+                int subChoice = sc.nextInt();
+                sc.nextLine(); // Clear buffer
+
+                if (subChoice == 2) {
+                    if (postsDAO.deleteUserComment(loggedInUser.getUserId(), pid)) {
+                        System.out.println("Comment removed.");
+                    }
+                    return;
+                } else if (subChoice == 3) {
+                    return;
+                }
+            }
+
+            // STEP 2: Add comment
+            System.out.print("Write your comment: ");
+            String msg = sc.nextLine();
             
-            if (profileDAO.updateProfile(loggedInUser.getUserId(), n, b, l, w)) {
-                System.out.println("Success: Personal Profile Updated!");
+            if (postsDAO.addComment(pid, loggedInUser.getUserId(), msg)) {
+                System.out.println("Comment added!");
+                if (ownerId != loggedInUser.getUserId()) {
+                    notificationDAO.createNotification(ownerId, loggedInUser.getUserId(), 
+                        "commented on your post: " + post.getTitle(), "COMMENT");
+                }
             }
-        } else {
-            // Reuse the existing enhanced logic for Business/Creator
-            updateBusinessFromSearch(loggedInUser.getUserId()); 
         }
     }
-    private void viewSearchedProfile(int targetId) {
-        User targetUser = userDAO.getUserById(targetId);
-        Profile targetProfile = profileDAO.getProfileByUserId(targetId);
+    // --- NETWORK & NOTIFICATIONS ---
+    private void showNetworkFlow() throws DatabaseException {
+        System.out.println("\n1. Requests\n2. Connections\n3. Back");
+        System.out.print("Choice: ");
+        int c = sc.nextInt();
+        sc.nextLine(); // FIX: Clear buffer
 
-        if (targetUser == null || targetProfile == null) {
-            System.out.println("Profile not found.");
-            return;
-        }
-
-        // Display Profile Details
-        System.out.println("\n--- " + targetUser.getUsername() + "'s Profile ---");
-        System.out.println("Type: " + targetUser.getUserType());
-        System.out.println("Bio: " + targetProfile.getBio());
-        System.out.println("Location: " + targetProfile.getLocation());
-
-        // --- NEW BUSINESS OPTIONS BLOCK ---
-        if (targetUser.getUserType().equalsIgnoreCase("Business")) {
-            System.out.println("\n[Business Tools]");
-            System.out.println("1. Change Business Address/Hours");
-            System.out.println("2. Update Business Category");
-            System.out.println("3. Back to Search");
-            System.out.print("Choice: ");
-            int choice = sc.nextInt();
-            sc.nextLine(); // clear buffer
-
-            if (choice == 1 || choice == 2) {
-                updateBusinessFromSearch(targetUser.getUserId());
-            }
-        } else {
-            System.out.println("\n1. Back to Search");
-            sc.nextInt();
-        }
-    }
-    
-    private void updateBusinessFromSearch(int businessId) {
-        System.out.println("\n--- Update Business Details ---");
-        
-        // We use sc.nextLine() to ensure we capture spaces in names/addresses
-        System.out.print("New Entity Name (or enter to skip): "); 
-        String name = sc.nextLine();
-        
-        System.out.print("New Category: "); 
-        String cat = sc.nextLine();
-        
-        System.out.print("New Description/Bio: "); 
-        String bio = sc.nextLine();
-        
-        System.out.print("New Business Address: "); 
-        String addr = sc.nextLine();
-        
-        // Validate the phone number using your existing ProfileService logic
-        String contact;
-        while (true) {
-            System.out.print("New Contact Info (10-digit mobile): ");
-            contact = sc.nextLine();
-            if (profileService.isValidIndianMobile(contact)) {
-                break;
+        if (c == 1) handleIncomingRequests(loggedInUser.getUserId());
+        else if (c == 2) {
+            List<String> connections = networksDAO.getConnections(loggedInUser.getUserId());
+            if(connections.isEmpty()) {
+                System.out.println("No connections found.");
             } else {
-                System.out.println("Error: Please enter a valid 10-digit Indian mobile number.");
+                for (String s : connections) System.out.println("- " + s);
             }
         }
-        
-        System.out.print("New Website: "); 
-        String web = sc.nextLine();
-        
-        System.out.print("New Business Hours: "); 
-        String hours = sc.nextLine();
+    }
 
-        // Call your service to pack and save these details
-        boolean success = profileService.updateEnhancedProfile(
-            businessId, name, cat, bio, addr, contact, web, hours
-        );
+    private void handleIncomingRequests(int myId) throws DatabaseException {
+        // 1. Fetch the requests
+        List<String> requests = networksDAO.getIncomingRequests(myId);
 
-        if (success) {
-            System.out.println("\n[SUCCESS] Business details updated!");
+        // 2. Check if empty immediately
+        if (requests.isEmpty()) {
+            System.out.println("\n[!] You have no pending connection requests.");
+            return; // Exit early
+        }
+
+        System.out.println("\n--- PENDING REQUESTS ---");
+        for (String req : requests) {    
+            System.out.println(req);
+        }
+
+        System.out.print("\nEnter Sender ID to Accept (0 to skip): ");
+        int sid = sc.nextInt();
+        sc.nextLine();
+
+        if (sid != 0) {
+            
+            if (networksDAO.updateRequestStatus(myId, sid, "ACCEPTED")) {
+                notificationDAO.createNotification(sid, myId, "accepted your request", "ACCEPT");
+                System.out.println("[SUCCESS] Connection accepted!");
+            } else {
+                System.out.println("[!] Failed to accept. Invalid ID or request expired.");
+            }
+        }
+    }
+
+    private void showNotificationsFlow() throws DatabaseException {
+        List<Notification> list = notificationDAO.getNotificationsForUser(loggedInUser.getUserId());
+        
+        if (list.isEmpty()) {
+            System.out.println("\nNo new notifications.");
         } else {
-            System.out.println("\n[ERROR] Failed to update business details.");
+            for (Notification n : list) System.out.println("> " + n.getMessage());
+        }
+        
+        System.out.println("\n1. Clear All | 0. Back");
+        System.out.print("Choice: ");
+        int choice = sc.nextInt();
+        sc.nextLine(); // FIX: Clear buffer
+
+        if (choice == 1) {
+            notificationDAO.deleteAllNotifications(loggedInUser.getUserId());
+            System.out.println("Notifications cleared.");
         }
     }
 }

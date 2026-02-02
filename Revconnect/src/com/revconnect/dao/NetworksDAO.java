@@ -1,7 +1,9 @@
 package com.revconnect.dao;
 
-import com.revconnect.config.DBConnection;
+import com.revconnect.util.DBUtil;
 import com.revconnect.model.User;
+import com.revconnect.exceptions.DatabaseException;
+import com.revconnect.exceptions.NetworkException;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,308 +11,182 @@ import java.util.List;
 public class NetworksDAO {
 
     // 1. View Incoming Requests
-	// Fix this in NetworksDAO.java
-	public List<String> getIncomingRequests(int myId) {
-	    List<String> requests = new ArrayList<String>();
-	    // Use 'NETWORKS' (plural) and the columns from your screenshot
-	    String sql = "SELECT u.USERNAME, u.USER_ID FROM USERS u " +
-	                 "JOIN NETWORKS n ON u.USER_ID = n.USER_ID " +
-	                 "WHERE n.TARGET_ID = ? AND n.STATUS = 'PENDING'";
-	    
-	    Connection conn = null;
-	    PreparedStatement pstmt = null;
-	    ResultSet rs = null;
-
-	    try {
-	        conn = DBConnection.getConnection();
-	        pstmt = conn.prepareStatement(sql);
-	        pstmt.setInt(1, myId);
-	        rs = pstmt.executeQuery();
-
-	        while (rs.next()) {
-	            requests.add(rs.getString("USERNAME") + " (ID: " + rs.getInt("USER_ID") + ")");
-	        }
-	    } catch (SQLException e) {
-	        System.out.println("Error: " + e.getMessage());
-	    } finally {
-	        closeResources(conn, pstmt, rs);
-	    }
-	    return requests;
-	}
-
-    // 2. Accept or Reject Request
-	public boolean updateRequestStatus(int myId, int senderId, String newStatus) {
-	    // Correct SQL: You are the TARGET_ID, the person who added you is the USER_ID
-	    String sql = "UPDATE NETWORKS SET STATUS = ? WHERE TARGET_ID = ? AND USER_ID = ? AND STATUS = 'PENDING'";
-	    
-	    Connection conn = null;
-	    PreparedStatement pstmt = null;
-	    try {
-	        conn = DBConnection.getConnection();
-	        pstmt = conn.prepareStatement(sql);
-	        pstmt.setString(1, newStatus);
-	        pstmt.setInt(2, myId);
-	        pstmt.setInt(3, senderId);
-
-	        return pstmt.executeUpdate() > 0;
-	    } catch (SQLException e) {
-	        System.out.println("DB Error: " + e.getMessage());
-	        return false;
-	    } finally {
-	        closeResources(conn, pstmt, null);
-	    }
-	}
-
-    // 3. View Connections (Friends)
-	public List<String> getConnections(int userId) {
-	    List<String> connections = new ArrayList<String>();
-	    // It checks both sides (If you are USER_ID or if you are TARGET_ID).
-	    // It filters by 'ACCEPTED' and ensures your own name isn't in the list.
-	    String sql = "SELECT u.USERNAME FROM USERS u " +
-	                 "JOIN NETWORKS n ON (u.USER_ID = n.USER_ID OR u.USER_ID = n.TARGET_ID) " +
-	                 "WHERE (n.USER_ID = ? OR n.TARGET_ID = ?) " +
-	                 "AND n.STATUS = 'ACCEPTED' " + 
-	                 "AND u.USER_ID != ?"; 
-
-	    Connection conn = null;
-	    PreparedStatement pstmt = null;
-	    ResultSet rs = null;
-
-	    try {
-	        conn = DBConnection.getConnection();
-	        pstmt = conn.prepareStatement(sql);
-	        
-	        // Parameter 1 & 2: Check both possible columns for your ID
-	        pstmt.setInt(1, userId);
-	        pstmt.setInt(2, userId);
-	        
-	        // Parameter 3: Tell the query to ignore your own ID when picking the Username
-	        pstmt.setInt(3, userId);
-	        
-	        rs = pstmt.executeQuery();
-	        while (rs.next()) {
-	            connections.add(rs.getString("USERNAME"));
-	        }
-	    } catch (SQLException e) {
-	        System.out.println("Database Error in getConnections: " + e.getMessage());
-	        e.printStackTrace();
-	    } finally {
-	        closeResources(conn, pstmt, rs);
-	    }
-	    return connections;
-	}
-    // 5. View Followers
-    public List<String> getFollowing(int userId) {
-        List<String> following = new ArrayList<String>();
-        // TARGET_ID is the person YOU are following
-        String sql = "SELECT u.USERNAME FROM USERS u " +
-                     "JOIN NETWORKS n ON u.USER_ID = n.TARGET_ID " +
-                     "WHERE n.USER_ID = ? AND n.STATUS = 'FOLLOWING'";
-        // ... code to execute query
-        return following;
-    }
-
-    public List<String> getFollowers(int userId) {
-        List<String> followers = new ArrayList<String>();
-        // USER_ID is the person following YOU (the TARGET_ID)
-        String sql = "SELECT u.USERNAME FROM USERS u " +
+    public List<String> getIncomingRequests(int myId) throws DatabaseException {
+        List<String> requests = new ArrayList<String>();
+        String sql = "SELECT u.USERNAME, u.USER_ID FROM USERS u " +
                      "JOIN NETWORKS n ON u.USER_ID = n.USER_ID " +
-                     "WHERE n.TARGET_ID = ? AND n.STATUS = 'FOLLOWING'";
-        // ... code to execute query
-        return followers;
-    }
-
-    // Helper for Followers/Following
-    private List<String> fetchUsernames(String sql, int id) {
-        List<String> list = new ArrayList<String>();
+                     "WHERE n.TARGET_ID = ? AND n.STATUS = 'PENDING'";
+        
         Connection conn = null;
         PreparedStatement pstmt = null;
         ResultSet rs = null;
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, id);
-            rs = pstmt.executeQuery();
-            while (rs.next()) { list.add(rs.getString("USERNAME")); }
-        } catch (SQLException e) { e.printStackTrace(); }
-        finally { closeResources(conn, pstmt, rs); }
-        return list;
-    }
- // 4. Remove Connection
-    public boolean removeConnection(int myId, int targetUserId) {
-        // This SQL handles both cases: you added them, or they added you
-    	String sql = "DELETE FROM NETWORKS WHERE " +
-                "((USER_ID = ? AND TARGET_ID = ?) OR " +
-                "(USER_ID = ? AND TARGET_ID = ?)) " +
-                "AND STATUS = 'ACCEPTED'";
-
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        boolean success = false;
 
         try {
-            conn = DBConnection.getConnection();
+            conn = DBUtil.getConnection();
             pstmt = conn.prepareStatement(sql);
             pstmt.setInt(1, myId);
-            pstmt.setInt(2, targetUserId);
-            pstmt.setInt(3, targetUserId);
-            pstmt.setInt(4, myId);
+            rs = pstmt.executeQuery();
 
-            int rows = pstmt.executeUpdate();
-            if (rows > 0) {
-                success = true;
+            while (rs.next()) {
+                requests.add(rs.getString("USERNAME") + " (ID: " + rs.getInt("USER_ID") + ")");
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            throw new DatabaseException("Error fetching incoming requests", e);
         } finally {
-            closeResources(conn, pstmt, null);
+            DBUtil.close(conn, pstmt, rs);
         }
-        return success;
+        return requests;
     }
- // Add these to NetworksDAO.java
-    
-    public boolean followUser(int followerId, int followingId) {
+
+    // 2. Accept or Reject Request
+    public boolean updateRequestStatus(int myId, int senderId, String status) throws DatabaseException {
+        String sql = "UPDATE networks SET status = ? WHERE user_id = ? AND target_id = ?";
         Connection conn = null;
         PreparedStatement pstmt = null;
-        String sql = "INSERT INTO FOLLOWERS (FOLLOWER_ID, FOLLOWING_ID) VALUES (?, ?)";
         
         try {
-            conn = DBConnection.getConnection();
+            conn = DBUtil.getConnection();
             pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, followerId);
-            pstmt.setInt(2, followingId);
+            pstmt.setString(1, status);
+            pstmt.setInt(2, senderId);
+            pstmt.setInt(3, myId);
+            
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            // Log error or handle duplicate entry
-            return false;
+            throw new DatabaseException("Error updating network status: " + e.getMessage());
         } finally {
-            // Manually closing to avoid "Try with Arguments" error
+            // Essential to close resources in older Java versions
             try { if (pstmt != null) pstmt.close(); } catch (SQLException e) {}
             try { if (conn != null) conn.close(); } catch (SQLException e) {}
         }
     }
 
-    public boolean unfollowUser(int followerId, int followingId) {
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        String sql = "DELETE FROM FOLLOWERS WHERE FOLLOWER_ID = ? AND FOLLOWING_ID = ?";
-        
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, followerId);
-            pstmt.setInt(2, followingId);
-            return pstmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            e.printStackTrace();
-            return false;
-        } finally {
-            try { if (pstmt != null) pstmt.close(); } catch (SQLException e) {}
-            try { if (conn != null) conn.close(); } catch (SQLException e) {}
-        }
-    }
-    public int getUnreadCount(int userId) {
-        String sql = "SELECT COUNT(*) FROM NOTIFICATIONS WHERE USER_ID = ? AND READ_STATUS = 0";
+    // 3. View Connections (Strings)
+    public List<String> getConnections(int userId) throws DatabaseException {
+        List<String> connections = new ArrayList<String>();
+        String sql = "SELECT u.USERNAME FROM USERS u " +
+                     "JOIN NETWORKS n ON (u.USER_ID = n.USER_ID OR u.USER_ID = n.TARGET_ID) " +
+                     "WHERE (n.USER_ID = ? OR n.TARGET_ID = ?) " +
+                     "AND n.STATUS = 'ACCEPTED' " + 
+                     "AND u.USER_ID != ?"; 
+
         Connection conn = null;
         PreparedStatement pstmt = null;
         ResultSet rs = null;
+
         try {
-            conn = DBConnection.getConnection();
+            conn = DBUtil.getConnection();
             pstmt = conn.prepareStatement(sql);
             pstmt.setInt(1, userId);
+            pstmt.setInt(2, userId);
+            pstmt.setInt(3, userId);
+            
             rs = pstmt.executeQuery();
-            if (rs.next()) return rs.getInt(1);
+            while (rs.next()) {
+                connections.add(rs.getString("USERNAME"));
+            }
         } catch (SQLException e) {
-            e.printStackTrace();
+            throw new DatabaseException("Error retrieving connection list", e);
         } finally {
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(conn, pstmt, rs);
         }
-        return 0;
+        return connections;
     }
 
-    // Add this to clear notifications (Mark as read)
-    public void markAllAsRead(int userId) {
-        String sql = "UPDATE NOTIFICATIONS SET READ_STATUS = 1 WHERE USER_ID = ?";
-        Connection conn = null;
-        PreparedStatement pstmt = null;
-        try {
-            conn = DBConnection.getConnection();
-            pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            closeResources(conn, pstmt, null);
+    // 4. Send Request (Fixing column logic and adding Exception)
+    public boolean sendRequest(int senderId, int targetId, String status) throws DatabaseException, NetworkException {
+        if (senderId == targetId) {
+            throw new NetworkException("Logic Error: You cannot connect with yourself.");
         }
-    }
-    public boolean sendRequest(int senderId, int targetId, String status) {
+
         String sql = "INSERT INTO NETWORKS (USER_ID, TARGET_ID, STATUS) VALUES (?, ?, ?)";
         Connection conn = null;
         PreparedStatement pstmt = null;
         try {
-            conn = DBConnection.getConnection();
+            conn = DBUtil.getConnection();
             pstmt = conn.prepareStatement(sql);
             pstmt.setInt(1, senderId);
             pstmt.setInt(2, targetId);
             pstmt.setString(3, status);
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            System.out.println("Error: Likely already connected/following.");
-            return false;
+            if (e.getErrorCode() == 1 || e.getSQLState().equals("23000")) {
+                throw new NetworkException("You are already connected to or following this user.");
+            }
+            throw new DatabaseException("Error sending request", e);
         } finally {
-            closeResources(conn, pstmt, null);
+            DBUtil.close(conn, pstmt);
         }
     }
 
-    public boolean removeConnectionOrFollow(int userId, int targetId) {
-        String sql = "DELETE FROM NETWORKS WHERE (USER_ID = ? AND TARGET_ID = ?) OR (USER_ID = ? AND TARGET_ID = ?)";
+    // 5. Remove Connection (With Pre-Check Logic)
+    public boolean removeConnection(int myId, int targetUserId) throws DatabaseException, NetworkException {
+        // Logic check: verify connection exists first
+        if (!isFriend(myId, targetUserId)) {
+            throw new NetworkException("Cannot remove: No accepted connection exists with User ID: " + targetUserId);
+        }
+
+        String sql = "DELETE FROM NETWORKS WHERE " +
+                     "((USER_ID = ? AND TARGET_ID = ?) OR (USER_ID = ? AND TARGET_ID = ?)) " +
+                     "AND STATUS = 'ACCEPTED'";
+
         Connection conn = null;
         PreparedStatement pstmt = null;
         try {
-            conn = DBConnection.getConnection();
+            conn = DBUtil.getConnection();
             pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            pstmt.setInt(2, targetId);
-            pstmt.setInt(3, targetId);
-            pstmt.setInt(4, userId);
+            pstmt.setInt(1, myId);
+            pstmt.setInt(2, targetUserId);
+            pstmt.setInt(3, targetUserId);
+            pstmt.setInt(4, myId);
+
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            return false;
+            throw new DatabaseException("Error removing connection", e);
         } finally {
-            closeResources(conn, pstmt, null);
+            DBUtil.close(conn, pstmt);
         }
     }
-    
-    public boolean isFollowing(int userId, int targetId) {
-        // Checks if a record exists with status 'FOLLOWING'
-        String sql = "SELECT 1 FROM NETWORKS WHERE USER_ID = ? AND TARGET_ID = ? AND STATUS = 'FOLLOWING'";
+
+    // 6. View Followers/Following 
+    public List<String> getFollowing(int userId) throws DatabaseException {
+        String sql = "SELECT u.USERNAME FROM USERS u JOIN NETWORKS n ON u.USER_ID = n.TARGET_ID WHERE n.USER_ID = ? AND n.STATUS = 'FOLLOWING'";
+        return fetchUsernames(sql, userId);
+    }
+
+    public List<String> getFollowers(int userId) throws DatabaseException {
+        String sql = "SELECT u.USERNAME FROM USERS u JOIN NETWORKS n ON u.USER_ID = n.USER_ID WHERE n.TARGET_ID = ? AND n.STATUS = 'FOLLOWING'";
+        return fetchUsernames(sql, userId);
+    }
+
+    private List<String> fetchUsernames(String sql, int id) throws DatabaseException {
+        List<String> list = new ArrayList<String>();
         Connection conn = null;
         PreparedStatement pstmt = null;
         ResultSet rs = null;
         try {
-            conn = DBConnection.getConnection();
+            conn = DBUtil.getConnection();
             pstmt = conn.prepareStatement(sql);
-            pstmt.setInt(1, userId);
-            pstmt.setInt(2, targetId);
+            pstmt.setInt(1, id);
             rs = pstmt.executeQuery();
-            return rs.next(); // Returns true if a row is found
-        } catch (SQLException e) {
-            return false;
-        } finally {
-            closeResources(conn, pstmt, rs);
+            while (rs.next()) { list.add(rs.getString("USERNAME")); }
+        } catch (SQLException e) { 
+            throw new DatabaseException("Error fetching usernames", e); 
+        } finally { 
+            DBUtil.close(conn, pstmt, rs); 
         }
+        return list;
     }
-    
-    public boolean isFriend(int userId, int targetId) {
-        // Friends can be either (User1, User2) or (User2, User1)
+
+    // Checkers
+    public boolean isFriend(int userId, int targetId) throws DatabaseException {
         String sql = "SELECT 1 FROM NETWORKS WHERE STATUS = 'ACCEPTED' AND " +
                      "((USER_ID = ? AND TARGET_ID = ?) OR (USER_ID = ? AND TARGET_ID = ?))";
         Connection conn = null;
         PreparedStatement pstmt = null;
         ResultSet rs = null;
         try {
-            conn = DBConnection.getConnection();
+            conn = DBUtil.getConnection();
             pstmt = conn.prepareStatement(sql);
             pstmt.setInt(1, userId);
             pstmt.setInt(2, targetId);
@@ -319,35 +195,28 @@ public class NetworksDAO {
             rs = pstmt.executeQuery();
             return rs.next();
         } catch (SQLException e) {
-            return false;
+            throw new DatabaseException("Friend verification failed", e);
         } finally {
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(conn, pstmt, rs);
         }
     }
-    public List<User> getAcceptedConnections(int myId) {
+
+    public List<User> getAcceptedConnections(int myId) throws DatabaseException {
         List<User> connections = new ArrayList<User>();
-        // The JOIN finds the user who is NOT you on either side of an 'ACCEPTED' row
         String sql = "SELECT U.USER_ID, U.USERNAME FROM USERS U " +
                 "JOIN NETWORKS N ON (U.USER_ID = N.USER_ID OR U.USER_ID = N.TARGET_ID) " +
                 "WHERE (N.USER_ID = ? OR N.TARGET_ID = ?) " +
-                "AND U.USER_ID != ? " +
-                "AND N.STATUS = 'ACCEPTED'";
+                "AND U.USER_ID != ? AND N.STATUS = 'ACCEPTED'";
 
         Connection conn = null;
         PreparedStatement pstmt = null;
         ResultSet rs = null;
-
         try {
-            conn = DBConnection.getConnection();
+            conn = DBUtil.getConnection();
             pstmt = conn.prepareStatement(sql);
-            
-            // 1. Check if you are the one who sent the request (USER_ID)
             pstmt.setInt(1, myId);
-            // 2. Check if you are the one who received the request (TARGET_ID)
             pstmt.setInt(2, myId);
-            // 3. Exclude yourself from the final list of names
             pstmt.setInt(3, myId);
-            
             rs = pstmt.executeQuery();
 
             while (rs.next()) {
@@ -357,21 +226,40 @@ public class NetworksDAO {
                 connections.add(user);
             }
         } catch (SQLException e) {
-            System.out.println("Error fetching connections: " + e.getMessage());
-            e.printStackTrace();
+            throw new DatabaseException("Error fetching object-based connections", e);
         } finally {
-            // Manually closing resources for compiler compatibility
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(conn, pstmt, rs);
         }
         return connections;
     }
-
-    // Helper to close resources (Crucial for older Java)
-    private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
+    
+    
+    public boolean isFollowing(int followerId, int creatorId) throws DatabaseException {
+        String sql = "SELECT COUNT(*) FROM networks WHERE user_id = ? AND target_id = ? AND status = 'FOLLOWING'";
+        Connection conn = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+        
         try {
-            if (rs != null) rs.close();
-            if (stmt != null) stmt.close();
-            if (conn != null) conn.close();
-        } catch (SQLException e) { e.printStackTrace(); }
+            conn = DBUtil.getConnection();
+            pstmt = conn.prepareStatement(sql);
+            pstmt.setInt(1, followerId);
+            pstmt.setInt(2, creatorId);
+            rs = pstmt.executeQuery();
+            
+            if (rs.next()) {
+                return rs.getInt(1) > 0;
+            }
+        } catch (SQLException e) {
+            throw new DatabaseException("Error checking follow status: " + e.getMessage());
+        } finally {
+            // Manually closing resources since try-with-args is not used
+            try { if (rs != null) rs.close(); } catch (SQLException e) {}
+            try { if (pstmt != null) pstmt.close(); } catch (SQLException e) {}
+            try { if (conn != null) conn.close(); } catch (SQLException e) {}
+        }
+        return false;
     }
+    
+    
 }

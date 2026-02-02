@@ -9,6 +9,7 @@ public class Notification {
     private String type;      // Matches NOTIF_TYPE in DB
     private String senderUsername;
     private int readStatus;   // Matches READ_STATUS in DB
+    private int commentsCount;
 
     public Notification() {}
 
@@ -32,6 +33,9 @@ public class Notification {
 
     public int getPostId() { return postId; }
     public void setPostId(int postId) { this.postId = postId; }
+    
+    public int getCommentsCount() { return commentsCount; }
+    public void setCommentsCount(int commentsCount) { this.commentsCount = commentsCount; }
 
     // Status & Meta Getters/Setters
     public String getSenderUsername() { return senderUsername; }

@@ -2,6 +2,7 @@ package com.revconnect.service;
 
 import com.revconnect.dao.ProfileDAO;
 import com.revconnect.model.Profile;
+import com.revconnect.exceptions.DatabaseException;
 import java.util.regex.Pattern;
 
 public class ProfileService {
@@ -9,7 +10,6 @@ public class ProfileService {
 
     // ---------- VALIDATION LOGIC ----------
 
-    // Helper method for Indian Phone Number Validation
     public boolean isValidIndianMobile(String contact) {
         if (contact == null) return false;
         // Regex: Starts with 6-9, followed by exactly 9 digits (Total 10)
@@ -32,21 +32,26 @@ public class ProfileService {
 
     // ---------- DATABASE LOGIC ----------
 
-    public Profile getProfile(int userId) {
+    public Profile getProfile(int userId) throws DatabaseException {
         return profileDAO.getProfileByUserId(userId);
     }
 
-    public boolean updatePersonalProfile(int userId, String name, String bio, String loc, String web) {
+   
+    public boolean updatePersonalProfile(int userId, String name, String bio, String loc, String web) throws DatabaseException {
+        // Ensure the record exists before updating
+        profileDAO.ensureProfileExists(userId, name);
         return profileDAO.updateProfile(userId, name, bio, loc, web);
     }
 
     public boolean updateEnhancedProfile(int userId, String name, String category, String bio, 
-                                          String address, String contact, String web, String hours) {
+                                          String address, String contact, String web, String hours) throws DatabaseException {
         
-        // Packing details to avoid changing the DB table structure
+        // Packing details to keep current DB schema
         String detailedBio = "Category: " + category + " | " + bio + " | Contact: " + contact;
         String detailedLoc = address + " (Hours: " + hours + ")";
         
+        // Ensure the record exists before updating
+        profileDAO.ensureProfileExists(userId, name);
         return profileDAO.updateProfile(userId, name, detailedBio, detailedLoc, web);
     }
 }

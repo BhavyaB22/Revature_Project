@@ -1,6 +1,7 @@
 package com.revconnect.dao;
 
 import com.revconnect.config.DBConnection;
+import com.revconnect.util.DBUtil;
 import com.revconnect.model.User;
 import com.revconnect.model.Profile;
 import com.revconnect.exceptions.DatabaseException;
@@ -27,7 +28,7 @@ public class UserDAO {
         } catch (SQLException e) {
             return false;
         } finally {
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(conn, pstmt, rs);
         }
     }
 
@@ -48,14 +49,15 @@ public class UserDAO {
         } catch (SQLException e) {
             return false;
         } finally {
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(conn, pstmt, rs);
         }
     }
 
     /**
      * Registers a new user and creates an associated profile.
+     * Uses transactions to ensure both records are created or none at all.
      */
-    public boolean registerUser(User user) {
+    public boolean registerUser(User user) throws DatabaseException {
         String userSql = "INSERT INTO USERS (email, username, password, user_type, privacy, s_question, s_answer) VALUES (?,?,?,?,?,?,?)";
         String profileSql = "INSERT INTO PROFILES (USER_ID, USERNAME) VALUES (?, ?)";
         
@@ -91,18 +93,18 @@ public class UserDAO {
             }
         } catch (SQLException e) {
             try { if (conn != null) conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
-            throw new DatabaseException("Registration failed", e);
+            throw new DatabaseException("Registration failed: Unable to create user account.", e);
         } finally {
-            if (profilePstmt != null) try { profilePstmt.close(); } catch (SQLException e) {}
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(null, profilePstmt, null);
+            DBUtil.close(conn, pstmt, rs);
         }
         return false;
     }
 
     /**
-     * Standard Login
+     * Authenticates user credentials.
      */
-    public User login(String email, String pass) {
+    public User login(String email, String pass) throws DatabaseException {
         String sql = "SELECT * FROM Users WHERE LOWER(email) = LOWER(?) AND password = ?";
         Connection conn = null;
         PreparedStatement pstmt = null;
@@ -124,15 +126,15 @@ public class UserDAO {
         } catch (SQLException e) {
             throw new DatabaseException("Login database error", e);
         } finally {
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(conn, pstmt, rs);
         }
         return null;
     }
 
     /**
-     * UPDATED: Fetches user by email for Password Recovery
+     * Fetches user by email for Password Recovery.
      */
-    public User getUserByEmail(String email) {
+    public User getUserByEmail(String email) throws DatabaseException {
         String sql = "SELECT user_id, username, s_question, s_answer FROM Users WHERE LOWER(email) = LOWER(?)";
         Connection conn = null;
         PreparedStatement pstmt = null;
@@ -153,15 +155,15 @@ public class UserDAO {
         } catch (SQLException e) {
             throw new DatabaseException("Error retrieving user for recovery", e);
         } finally {
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(conn, pstmt, rs);
         }
         return null;
     }
 
     /**
-     * UPDATED: Updates password after security verification
+     * Updates password after security verification.
      */
-    public boolean updatePassword(int userId, String newPass) {
+    public boolean updatePassword(int userId, String newPass) throws DatabaseException {
         String sql = "UPDATE Users SET password = ? WHERE user_id = ?";
         Connection conn = null;
         PreparedStatement pstmt = null;
@@ -174,14 +176,14 @@ public class UserDAO {
         } catch (SQLException e) {
             throw new DatabaseException("Password update failed", e);
         } finally {
-            closeResources(conn, pstmt, null);
+            DBUtil.close(conn, pstmt, null);
         }
     }
 
     /**
-     * Existing Search Functionality
+     * Search functionality based on username.
      */
-    public List<Profile> searchUsers(String query) {
+    public List<Profile> searchUsers(String query) throws DatabaseException {
         List<Profile> results = new ArrayList<Profile>();
         String sql = "SELECT * FROM Profiles WHERE username LIKE ?";
         Connection conn = null;
@@ -202,7 +204,7 @@ public class UserDAO {
         } catch (SQLException e) { 
             throw new DatabaseException("Search error", e);
         } finally {
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(conn, pstmt, rs);
         }
         return results;
     }
@@ -228,7 +230,7 @@ public class UserDAO {
         } catch (SQLException e) {
             e.printStackTrace();
         } finally {
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(conn, pstmt, rs);
         }
         return null;
     }
@@ -257,22 +259,8 @@ public class UserDAO {
         } catch (SQLException e) {
             System.err.println("Error fetching user list: " + e.getMessage());
         } finally {
-            // Essential for older Java versions to prevent connection leaks
-            closeResources(conn, pstmt, rs);
+            DBUtil.close(conn, pstmt, rs);
         }
         return users;
-    }
-
-    /**
-     * Resource Cleanup Helper (Manual closing for older Java compatibility)
-     */
-    private void closeResources(Connection conn, Statement stmt, ResultSet rs) {
-        try {
-            if (rs != null) rs.close();
-            if (stmt != null) stmt.close();
-            if (conn != null) conn.close();
-        } catch (SQLException e) {
-            System.err.println("Cleanup Error: " + e.getMessage());
-        }
     }
 }
