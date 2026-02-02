@@ -28,19 +28,19 @@ public class PostInteractionTest {
 
     /* ================= POST VALIDATION TESTS ================= */
 
-    @Test // 3. Basic @Test
+    @Test //  Basic @Test
     public void testLikeValidPost() {
         String result = postService.validateLike(5, 2); 
         assertEquals("SUCCESS", result);
     }
 
-    @Test // 4. Testing boundary/invalid values
+    @Test //  Testing boundary/invalid values
     public void testLikeInvalidPostID() {
         String result = postService.validateLike(5, -1);
         assertEquals("Invalid Post ID", result);
     }
 
-    @Test // 5. Testing logic for non-existent data
+    @Test //  Testing logic for non-existent data
     public void testCommentOnNonExistentPost() {
         String result = postService.validateComment(5, 999, "Great post!");
         assertEquals("Post not found", result);
@@ -48,7 +48,7 @@ public class PostInteractionTest {
 
     /* ================= USER AVAILABILITY TESTS ================= */
 
-    @Test // 6. Normal flow
+    @Test // Normal flow
     public void testInteractionWithValidUser() {
         String result = postService.validateUser(5);
         assertEquals("SUCCESS", result);
@@ -62,7 +62,7 @@ public class PostInteractionTest {
 
     /* ================= CONTENT LOGIC TESTS ================= */
 
-    @Test // 8. String validation
+    @Test // String validation
     public void testEmptyCommentContent() {
         String result = postService.validateComment(5, 21, "");
         assertEquals("Comment content cannot be empty", result);
@@ -76,7 +76,7 @@ public class PostInteractionTest {
 
     /* ================= ADVANCED BUSINESS LOGIC ================= */
 
-    @Test // 10. Self-interaction logic
+    @Test //  Self-interaction logic
     public void testSelfLikeRestriction() {
         // User 8 owns Post 6 according to your console image
         String result = postService.validateLike(8, 6);
@@ -102,6 +102,6 @@ public class PostInteractionTest {
    
     @AfterClass
     public static void globalTearDown() {
-        System.out.println(">>> ALL 12 LOGIC TESTS COMPLETED <<<");
+        System.out.println(">>> ALL  LOGIC TESTS COMPLETED <<<");
     }
 }
